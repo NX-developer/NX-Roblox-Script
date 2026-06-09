@@ -1,0 +1,3370 @@
+--[[
+    Ultimate Advanced Open Source Roblox Script Hub
+    - God Mode v2: HealthChanged + Dead state engellenir, kill brick'lere karsi dayanikli
+    - Anti-Void: Karakter asagi duserse otomatik kurtarma
+    - Click Teleport: PC (T tusu / sag tik) + Mobile (tap)
+    - HUD: FPS, Ping, KeyStrokes overlay (mobil joystick destekli)
+    - Upside-Down Camera: Eglenceli gorsel efekt
+    - Fly, Aimbot, Teleport V2, Wave Remover (mevcut)
+    - Yeni: Anti-AFK, Fullbright, FOV Slider, Server Hop
+
+    Credits / Thanks:
+    - Kick a Lucky Block automation logic inspired by the open-source
+      community (Gumanba - github.com/gumanba/Scripts, and "Sloppy GUI").
+      No code was copied; their public work helped map out the mechanics.
+    - UI library: Rayfield by Sirius Software.
+]]
+
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Delta Pro Hub",
+    Icon = "terminal",
+    LoadingTitle = "Advanced Open Source Hub",
+    LoadingSubtitle = "GodMode v2 + Slots Fixed",
+    Theme = "DarkBlue",
+    ConfigurationSaving = {
+       Enabled = true,
+       FolderName = "DeltaHubPro",
+       FileName = "config"
+    },
+    KeySystem = false
+})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local VirtualUser = game:GetService("VirtualUser")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local Camera = Workspace.CurrentCamera
+
+local flyConnection, noclipConnection, espActive, espPlayerData = nil, nil, false, {}
+local aimbotConnection, cameraLockConnection, hitboxConnection, hitboxHighlights = nil, nil, nil, {}
+local infiniteJumpConnection = nil
+local autoWalkEnabled, autoJumpEnabled = false, false
+local autoWalkConnection = nil
+local autoJumpStateConnection, autoJumpHeartbeatConnection, autoJumpCharConnection = nil, nil, nil
+local autoSpinEnabled = false
+local autoSpinBAV = nil
+local autoSpinSpeed = 5
+local godPositionEnabled = false
+local godPositionConnection = nil
+local godPositionHeight = 1000000
+local godPositionSafePos = nil
+local walkSpeedLockEnabled, jumpPowerLockEnabled = false, false
+local walkSpeedLockConn, jumpPowerLockConn = nil, nil
+local walkSpeedCharConn, jumpPowerCharConn = nil, nil
+local waveRemoverConnections = {}
+local waveCustomKeywords = {}
+local waveAggressiveMode = false
+local waveTotalRemoved = 0
+local antiAfkConnection = nil
+local clickTpConnections = {}
+local upsideDownActive = false
+local fullbrightActive, originalLighting = false, {}
+
+local hudGui = nil
+local hudConnection = nil
+local fpsEnabled, pingEnabled, keysEnabled = false, false, false
+local hudRepositionMode = false
+local fpsLabel, pingLabel, keysFrame = nil, nil, nil
+local keyVisuals = {}
+local frameTimes = {}
+local pingUpdateTimer = 0
+
+local godModeEnabled = false
+local godModeConnections = {}
+local godModeOriginalMax = nil
+
+local antiVoidEnabled = false
+local antiVoidConnection = nil
+local antiVoidThreshold = -300
+local antiVoidLastSafePos = nil
+
+local savedSettings = {
+    WalkSpeed = 16,
+    JumpPower = 50,
+    FOV = 70
+}
+
+local savedPositions = {}
+local currentTeleportSlot = 1
+
+local function parseSlotOption(opt)
+    if opt == nil then return nil end
+    if type(opt) == "table" then
+        opt = opt[1]
+    end
+    if type(opt) ~= "string" then return nil end
+    local num = tonumber(string.match(opt, "%d+"))
+    return num
+end
+
+local function getCurrentSlot()
+    local ok, flag = pcall(function()
+        return Rayfield.Flags and Rayfield.Flags["TeleportSlot"]
+    end)
+    if ok and flag then
+        local opt = flag.CurrentOption
+        local num = parseSlotOption(opt)
+        if num and num >= 1 and num <= 5 then
+            return num
+        end
+    end
+    if currentTeleportSlot and currentTeleportSlot >= 1 and currentTeleportSlot <= 5 then
+        return currentTeleportSlot
+    end
+    return 1
+end
+
+local function GetClosestVisiblePlayer(MaxDistance)
+    local closestPlayer = nil
+    local shortestDistance = MaxDistance or math.huge
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local hum = player.Character:FindFirstChild("Humanoid")
+            if hum and hum.Health <= 0 then continue end
+
+            local targetRoot = player.Character.HumanoidRootPart
+            local distance = (myRoot.Position - targetRoot.Position).Magnitude
+            if distance < shortestDistance then
+                local rayOrigin = myRoot.Position
+                local rayDirection = (targetRoot.Position - rayOrigin).Unit * distance
+                local rayParams = RaycastParams.new()
+                rayParams.FilterDescendantsInstances = {LocalPlayer.Character, player.Character}
+                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+                local rayResult = Workspace:Raycast(rayOrigin, rayDirection, rayParams)
+                if not rayResult then
+                    shortestDistance = distance
+                    closestPlayer = player
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+local function applyGodModeToCharacter(char)
+    if not godModeEnabled or not char then return end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then
+        local h = char:WaitForChild("Humanoid", 5)
+        hum = h
+    end
+    if not hum then return end
+
+    pcall(function()
+        hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    end)
+    pcall(function()
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    end)
+    pcall(function()
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    end)
+    pcall(function()
+        hum.BreakJointsOnDeath = false
+    end)
+
+    if godModeOriginalMax == nil then
+        godModeOriginalMax = hum.MaxHealth
+    end
+
+    hum.MaxHealth = 1e9
+    hum.Health = 1e9
+
+    local hpConn = hum.HealthChanged:Connect(function(health)
+        if godModeEnabled and health < hum.MaxHealth then
+            hum.Health = hum.MaxHealth
+        end
+    end)
+    table.insert(godModeConnections, hpConn)
+
+    local stateConn = hum.StateChanged:Connect(function(_, newState)
+        if godModeEnabled and newState == Enum.HumanoidStateType.Dead then
+            pcall(function()
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                hum.Health = hum.MaxHealth
+            end)
+        end
+    end)
+    table.insert(godModeConnections, stateConn)
+
+    local diedConn = hum.Died:Connect(function()
+        if godModeEnabled then
+            local lp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local pos = lp and lp.Position or nil
+            LocalPlayer.CharacterAdded:Wait()
+            task.wait(0.2)
+            applyGodModeToCharacter(LocalPlayer.Character)
+            if pos and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0, 5, 0))
+            end
+        end
+    end)
+    table.insert(godModeConnections, diedConn)
+end
+
+local function disableGodMode()
+    godModeEnabled = false
+    for _, c in ipairs(godModeConnections) do
+        if c then pcall(function() c:Disconnect() end) end
+    end
+    table.clear(godModeConnections)
+
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function()
+                hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+                hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+                hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+                hum.BreakJointsOnDeath = true
+            end)
+            local restore = godModeOriginalMax or 100
+            hum.MaxHealth = restore
+            hum.Health = restore
+        end
+    end
+    godModeOriginalMax = nil
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    local hum = char:WaitForChild("Humanoid")
+    hum.WalkSpeed = savedSettings.WalkSpeed
+    hum.JumpPower = savedSettings.JumpPower
+    hum.UseJumpPower = true
+    if godModeEnabled then
+        task.wait(0.1)
+        applyGodModeToCharacter(char)
+    end
+end)
+
+local function getKeyboardKeyStates()
+    local W, A, S, D, Space, Shift = false, false, false, false, false, false
+    if UserInputService.KeyboardEnabled then
+        W = UserInputService:IsKeyDown(Enum.KeyCode.W)
+        A = UserInputService:IsKeyDown(Enum.KeyCode.A)
+        S = UserInputService:IsKeyDown(Enum.KeyCode.S)
+        D = UserInputService:IsKeyDown(Enum.KeyCode.D)
+        Space = UserInputService:IsKeyDown(Enum.KeyCode.Space)
+        Shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+    end
+
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.MoveDirection.Magnitude > 0.1 then
+        local localDir = Camera.CFrame:VectorToObjectSpace(hum.MoveDirection)
+        if localDir.Z < -0.3 then W = true end
+        if localDir.Z > 0.3 then S = true end
+        if localDir.X < -0.3 then A = true end
+        if localDir.X > 0.3 then D = true end
+    end
+
+    if hum and hum:GetState() == Enum.HumanoidStateType.Jumping then
+        Space = true
+    end
+
+    return {W = W, A = A, S = S, D = D, Space = Space, Shift = Shift}
+end
+
+local function getPingValue()
+    local ok, ping = pcall(function()
+        return LocalPlayer:GetNetworkPing() * 1000
+    end)
+    if ok and ping then
+        return math.floor(ping)
+    end
+    local ok2, statsPing = pcall(function()
+        return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
+    end)
+    if ok2 and statsPing then
+        return math.floor(statsPing)
+    end
+    return -1
+end
+
+local function fpsColor(fps)
+    if fps >= 50 then return Color3.fromRGB(80, 240, 120)
+    elseif fps >= 30 then return Color3.fromRGB(255, 220, 80)
+    else return Color3.fromRGB(255, 90, 90) end
+end
+
+local function pingColor(ping)
+    if ping < 0 then return Color3.fromRGB(180, 180, 180)
+    elseif ping <= 100 then return Color3.fromRGB(80, 240, 120)
+    elseif ping <= 250 then return Color3.fromRGB(255, 220, 80)
+    else return Color3.fromRGB(255, 90, 90) end
+end
+
+local function makeDraggable(frame)
+    frame.Active = true
+    local dragging = false
+    local dragInput, dragStart, startPos
+
+    frame.InputBegan:Connect(function(input)
+        if not hudRepositionMode then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging and hudRepositionMode then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+local function applyRepositionVisual(frame, isOutlineTarget)
+    if not frame then return end
+    local existing = frame:FindFirstChild("RepositionStroke")
+    if hudRepositionMode then
+        if not existing then
+            local stroke = Instance.new("UIStroke")
+            stroke.Name = "RepositionStroke"
+            stroke.Color = Color3.fromRGB(80, 200, 255)
+            stroke.Thickness = 2
+            stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            stroke.Parent = frame
+        end
+        if isOutlineTarget and frame:IsA("Frame") and frame.BackgroundTransparency == 1 then
+            frame.BackgroundColor3 = Color3.fromRGB(80, 200, 255)
+            frame.BackgroundTransparency = 0.85
+        end
+    else
+        if existing then existing:Destroy() end
+        if isOutlineTarget and frame:IsA("Frame") then
+            frame.BackgroundTransparency = 1
+        end
+    end
+end
+
+local function refreshRepositionVisuals()
+    if fpsLabel then applyRepositionVisual(fpsLabel, false) end
+    if pingLabel then applyRepositionVisual(pingLabel, false) end
+    if keysFrame then applyRepositionVisual(keysFrame, true) end
+end
+
+local function ensureHud()
+    if hudGui and hudGui.Parent then return end
+
+    hudGui = Instance.new("ScreenGui")
+    hudGui.Name = "DeltaProHub_HUD"
+    hudGui.ResetOnSpawn = false
+    hudGui.IgnoreGuiInset = true
+    hudGui.DisplayOrder = 999
+
+    local parented = false
+    pcall(function()
+        if gethui then
+            hudGui.Parent = gethui()
+            parented = true
+        end
+    end)
+    if not parented then
+        pcall(function()
+            hudGui.Parent = game:GetService("CoreGui")
+            parented = true
+        end)
+    end
+    if not parented then
+        hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    fpsLabel = Instance.new("TextLabel")
+    fpsLabel.Name = "FpsLabel"
+    fpsLabel.AnchorPoint = Vector2.new(1, 0)
+    fpsLabel.Position = UDim2.new(1, -12, 0, 12)
+    fpsLabel.Size = UDim2.new(0, 110, 0, 26)
+    fpsLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+    fpsLabel.BackgroundTransparency = 0.35
+    fpsLabel.BorderSizePixel = 0
+    fpsLabel.Font = Enum.Font.GothamBold
+    fpsLabel.TextSize = 14
+    fpsLabel.TextColor3 = Color3.fromRGB(80, 240, 120)
+    fpsLabel.Text = "FPS: --"
+    fpsLabel.TextXAlignment = Enum.TextXAlignment.Center
+    fpsLabel.Visible = false
+    fpsLabel.Parent = hudGui
+    local fpsCorner = Instance.new("UICorner")
+    fpsCorner.CornerRadius = UDim.new(0, 6)
+    fpsCorner.Parent = fpsLabel
+    makeDraggable(fpsLabel)
+
+    pingLabel = Instance.new("TextLabel")
+    pingLabel.Name = "PingLabel"
+    pingLabel.AnchorPoint = Vector2.new(1, 0)
+    pingLabel.Position = UDim2.new(1, -12, 0, 44)
+    pingLabel.Size = UDim2.new(0, 110, 0, 26)
+    pingLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+    pingLabel.BackgroundTransparency = 0.35
+    pingLabel.BorderSizePixel = 0
+    pingLabel.Font = Enum.Font.GothamBold
+    pingLabel.TextSize = 14
+    pingLabel.TextColor3 = Color3.fromRGB(80, 240, 120)
+    pingLabel.Text = "Ping: --"
+    pingLabel.TextXAlignment = Enum.TextXAlignment.Center
+    pingLabel.Visible = false
+    pingLabel.Parent = hudGui
+    local pingCorner = Instance.new("UICorner")
+    pingCorner.CornerRadius = UDim.new(0, 6)
+    pingCorner.Parent = pingLabel
+    makeDraggable(pingLabel)
+
+    keysFrame = Instance.new("Frame")
+    keysFrame.Name = "KeysFrame"
+    keysFrame.AnchorPoint = Vector2.new(0, 1)
+    keysFrame.Position = UDim2.new(0, 20, 1, -20)
+    keysFrame.Size = UDim2.new(0, 132, 0, 90)
+    keysFrame.BackgroundTransparency = 1
+    keysFrame.Visible = false
+    keysFrame.Parent = hudGui
+
+    local function makeKey(letter, x, y, w, h)
+        local f = Instance.new("Frame")
+        f.Name = letter
+        f.Size = UDim2.new(0, w, 0, h)
+        f.Position = UDim2.new(0, x, 0, y)
+        f.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+        f.BackgroundTransparency = 0.35
+        f.BorderSizePixel = 0
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, 6)
+        c.Parent = f
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, 0, 1, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = letter
+        lbl.TextColor3 = Color3.fromRGB(200, 200, 210)
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 16
+        lbl.Parent = f
+
+        f.Parent = keysFrame
+        return {frame = f, label = lbl}
+    end
+
+    keyVisuals.W = makeKey("W", 46, 0, 40, 40)
+    keyVisuals.A = makeKey("A", 0, 44, 40, 40)
+    keyVisuals.S = makeKey("S", 46, 44, 40, 40)
+    keyVisuals.D = makeKey("D", 92, 44, 40, 40)
+    keyVisuals.Space = makeKey("SPACE", 0, 0, 40, 40)
+    keyVisuals.Space.label.TextSize = 10
+    keyVisuals.Space.frame.Position = UDim2.new(0, 0, 0, 0)
+    keyVisuals.Space.frame.Size = UDim2.new(0, 40, 0, 40)
+
+    makeDraggable(keysFrame)
+end
+
+local function setKeyVisual(entry, pressed)
+    if not entry then return end
+    if pressed then
+        entry.frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        entry.frame.BackgroundTransparency = 0.05
+        entry.label.TextColor3 = Color3.fromRGB(15, 15, 15)
+    else
+        entry.frame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+        entry.frame.BackgroundTransparency = 0.35
+        entry.label.TextColor3 = Color3.fromRGB(200, 200, 210)
+    end
+end
+
+local function startHud()
+    if hudConnection then return end
+    ensureHud()
+    hudConnection = RunService.RenderStepped:Connect(function(dt)
+        if fpsEnabled and fpsLabel then
+            table.insert(frameTimes, dt)
+            if #frameTimes > 30 then table.remove(frameTimes, 1) end
+            local sum = 0
+            for _, t in ipairs(frameTimes) do sum = sum + t end
+            if sum > 0 then
+                local fps = math.floor(#frameTimes / sum)
+                fpsLabel.Text = "FPS: " .. fps
+                fpsLabel.TextColor3 = fpsColor(fps)
+            end
+        end
+
+        if pingEnabled and pingLabel then
+            pingUpdateTimer = pingUpdateTimer + dt
+            if pingUpdateTimer >= 0.5 then
+                pingUpdateTimer = 0
+                local p = getPingValue()
+                if p < 0 then
+                    pingLabel.Text = "Ping: --"
+                else
+                    pingLabel.Text = "Ping: " .. p .. "ms"
+                end
+                pingLabel.TextColor3 = pingColor(p)
+            end
+        end
+
+        if keysEnabled and keysFrame then
+            local s = getKeyboardKeyStates()
+            setKeyVisual(keyVisuals.W, s.W)
+            setKeyVisual(keyVisuals.A, s.A)
+            setKeyVisual(keyVisuals.S, s.S)
+            setKeyVisual(keyVisuals.D, s.D)
+            setKeyVisual(keyVisuals.Space, s.Space)
+        end
+    end)
+end
+
+local function stopHudIfIdle()
+    if not fpsEnabled and not pingEnabled and not keysEnabled then
+        if hudConnection then
+            hudConnection:Disconnect()
+            hudConnection = nil
+        end
+    end
+end
+
+local waveBaseKeywords = {
+    "wave", "waves", "tsunami", "tsunamis", "flood", "floods",
+    "disaster", "disasters", "wins", "wackywaves", "wacky",
+    "killbrick", "killpart", "deathwave", "bigwave", "hugewave",
+    "tidalwave", "tidal", "earthquake", "lava", "meteor",
+    "fireball", "asteroid", "blackhole", "acidrain", "acid",
+    "hurricane", "tornado", "blizzard", "storm"
+}
+
+local function nameMatchesWave(name)
+    if not name or name == "" then return false end
+    local lname = string.lower(name)
+    for _, kw in ipairs(waveBaseKeywords) do
+        if string.find(lname, kw, 1, true) then return true end
+    end
+    for _, kw in ipairs(waveCustomKeywords) do
+        if kw and kw ~= "" then
+            if string.find(lname, string.lower(kw), 1, true) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function isProtectedInstance(obj)
+    if obj == Workspace.Terrain then return true end
+    if obj == Camera then return true end
+    if LocalPlayer.Character and (obj == LocalPlayer.Character or obj:IsDescendantOf(LocalPlayer.Character)) then
+        return true
+    end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character and (obj == p.Character or obj:IsDescendantOf(p.Character)) then
+            return true
+        end
+    end
+    return false
+end
+
+local function destroyWaveTarget(obj)
+    if not obj or not obj.Parent then return 0 end
+    if isProtectedInstance(obj) then return 0 end
+    local count = 0
+    if obj:IsA("Folder") or obj:IsA("Model") then
+        for _, c in ipairs(obj:GetChildren()) do
+            if not isProtectedInstance(c) then
+                local ok = pcall(function() c:Destroy() end)
+                if ok then count = count + 1 end
+            end
+        end
+    elseif obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("UnionOperation") then
+        local ok = pcall(function() obj:Destroy() end)
+        if ok then count = count + 1 end
+    end
+    return count
+end
+
+local function performWaveCleanup()
+    local removed = 0
+    for _, child in ipairs(Workspace:GetChildren()) do
+        if nameMatchesWave(child.Name) then
+            removed = removed + destroyWaveTarget(child)
+        end
+    end
+    if waveAggressiveMode then
+        for _, desc in ipairs(Workspace:GetDescendants()) do
+            if desc.Parent and nameMatchesWave(desc.Name) then
+                if desc:IsA("BasePart") or desc:IsA("MeshPart") or desc:IsA("UnionOperation") then
+                    if not isProtectedInstance(desc) then
+                        local ok = pcall(function() desc:Destroy() end)
+                        if ok then removed = removed + 1 end
+                    end
+                end
+            end
+        end
+    end
+    waveTotalRemoved = waveTotalRemoved + removed
+    return removed
+end
+
+local function startWaveCleanup()
+    performWaveCleanup()
+
+    local addedConn = Workspace.ChildAdded:Connect(function(child)
+        task.wait(0.05)
+        if child and child.Parent and nameMatchesWave(child.Name) then
+            destroyWaveTarget(child)
+        end
+    end)
+    table.insert(waveRemoverConnections, addedConn)
+
+    if waveAggressiveMode then
+        local descConn = Workspace.DescendantAdded:Connect(function(desc)
+            if desc and desc.Parent and nameMatchesWave(desc.Name) then
+                if desc:IsA("BasePart") or desc:IsA("MeshPart") or desc:IsA("UnionOperation") then
+                    if not isProtectedInstance(desc) then
+                        pcall(function() desc:Destroy() end)
+                        waveTotalRemoved = waveTotalRemoved + 1
+                    end
+                end
+            end
+        end)
+        table.insert(waveRemoverConnections, descConn)
+    end
+
+    local periodicTimer = 0
+    local heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+        periodicTimer = periodicTimer + dt
+        if periodicTimer >= 0.5 then
+            periodicTimer = 0
+            performWaveCleanup()
+        end
+    end)
+    table.insert(waveRemoverConnections, heartbeatConn)
+end
+
+local function stopWaveCleanup()
+    for _, conn in ipairs(waveRemoverConnections) do
+        if conn then pcall(function() conn:Disconnect() end) end
+    end
+    table.clear(waveRemoverConnections)
+end
+
+local MainTab = Window:CreateTab("Main", "home")
+local MovementTab = Window:CreateTab("Movement", "user")
+local VisualTab = Window:CreateTab("Visuals", "eye")
+local CombatTab = Window:CreateTab("Combat", "crosshair")
+local WavesTab = Window:CreateTab("Waves", "waves")
+local TeleportTab = Window:CreateTab("Teleport V2", "map-pin")
+local MiscTab = Window:CreateTab("Misc", "settings")
+
+local MM2_PLACE_IDS = {
+    [142823291] = true,
+}
+local Mm2Tab = nil
+if MM2_PLACE_IDS[game.PlaceId] then
+    Mm2Tab = Window:CreateTab("MM2", "skull")
+end
+
+local SKE_PLACE_IDS = {
+    [95082159892680] = true,
+}
+local SkeTab = nil
+if SKE_PLACE_IDS[game.PlaceId] then
+    SkeTab = Window:CreateTab("Speed Escape", "zap")
+end
+
+local KLB_PLACE_IDS = {
+    [89469502395769] = true,
+}
+local KlbTab = nil
+if KLB_PLACE_IDS[game.PlaceId] then
+    KlbTab = Window:CreateTab("Lucky Block", "gift")
+end
+
+local GodModeToggle = MainTab:CreateToggle({
+    Name = "God Mode (v2 - Kill Brick Resistant)",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            godModeEnabled = true
+            applyGodModeToCharacter(LocalPlayer.Character)
+            Rayfield:Notify({
+                Title = "God Mode ON",
+                Content = "Health protection active. Auto-revive on death.",
+                Duration = 3,
+                Image = "shield",
+            })
+        else
+            disableGodMode()
+            Rayfield:Notify({
+                Title = "God Mode OFF",
+                Content = "Health protection disabled.",
+                Duration = 3,
+                Image = "shield-off",
+            })
+        end
+    end,
+})
+
+local function startGodPosition()
+    if godPositionConnection then return end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        godPositionSafePos = hrp.Position
+    end
+
+    godPositionConnection = RunService.Heartbeat:Connect(function()
+        if not godPositionEnabled then return end
+        local c = LocalPlayer.Character
+        local h = c and c:FindFirstChild("HumanoidRootPart")
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
+        if not h or not hum or hum.Health <= 0 then return end
+        local pos = h.Position
+        if pos.Y < godPositionHeight - 1000 then
+            local rot = h.CFrame - h.CFrame.Position
+            h.CFrame = CFrame.new(pos.X, godPositionHeight, pos.Z) * rot
+            h.AssemblyLinearVelocity = Vector3.zero
+        end
+    end)
+end
+
+local function stopGodPosition()
+    if godPositionConnection then
+        godPositionConnection:Disconnect()
+        godPositionConnection = nil
+    end
+    if godPositionSafePos then
+        local c = LocalPlayer.Character
+        local h = c and c:FindFirstChild("HumanoidRootPart")
+        if h then
+            pcall(function()
+                local rot = h.CFrame - h.CFrame.Position
+                h.CFrame = CFrame.new(godPositionSafePos) * rot
+                h.AssemblyLinearVelocity = Vector3.zero
+            end)
+        end
+        godPositionSafePos = nil
+    end
+end
+
+local GodPositionToggle = MainTab:CreateToggle({
+    Name = "God Position (Sky Lock - 1M Studs Up)",
+    CurrentValue = false,
+    Callback = function(Value)
+        godPositionEnabled = Value
+        if Value then
+            startGodPosition()
+            Rayfield:Notify({
+                Title = "Sky Lock ON",
+                Content = "Pulled 1M studs up. Toggle off to return safely.",
+                Duration = 4,
+                Image = "shield",
+            })
+        else
+            stopGodPosition()
+            Rayfield:Notify({
+                Title = "Sky Lock OFF",
+                Content = "Returned to last safe position.",
+                Duration = 3,
+                Image = "shield-off",
+            })
+        end
+    end,
+})
+
+MainTab:CreateSlider({
+    Name = "God Position Height",
+    Range = {1000, 10000000},
+    Increment = 1000,
+    Suffix = "studs",
+    CurrentValue = 1000000,
+    Callback = function(Value)
+        godPositionHeight = Value
+    end,
+})
+
+local AntiVoidToggle = MainTab:CreateToggle({
+    Name = "Anti-Void (Auto-Save Position)",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            antiVoidEnabled = true
+            antiVoidConnection = RunService.Heartbeat:Connect(function()
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+                if hrp.Position.Y > antiVoidThreshold then
+                    if hrp.Velocity.Y >= -10 then
+                        antiVoidLastSafePos = hrp.Position
+                    end
+                else
+                    if antiVoidLastSafePos then
+                        hrp.CFrame = CFrame.new(antiVoidLastSafePos + Vector3.new(0, 8, 0))
+                        hrp.Velocity = Vector3.zero
+                    end
+                end
+            end)
+        else
+            antiVoidEnabled = false
+            if antiVoidConnection then
+                antiVoidConnection:Disconnect()
+                antiVoidConnection = nil
+            end
+        end
+    end,
+})
+
+MainTab:CreateSlider({
+    Name = "Anti-Void Y Threshold",
+    Range = {-1000, 0},
+    Increment = 10,
+    Suffix = "Y",
+    CurrentValue = -300,
+    Callback = function(Value)
+        antiVoidThreshold = Value
+    end,
+})
+
+local FlyToggle = MainTab:CreateToggle({
+    Name = "Fly (Camera-Direction, PC + Mobile)",
+    CurrentValue = false,
+    Callback = function(Value)
+        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hum = char:WaitForChild("Humanoid")
+        local hrp = char:WaitForChild("HumanoidRootPart")
+
+        if Value then
+            local bodyGyro = Instance.new("BodyGyro")
+            bodyGyro.P = 9e4
+            bodyGyro.D = 1000
+            bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+            bodyGyro.CFrame = hrp.CFrame
+            bodyGyro.Parent = hrp
+
+            local bodyVelocity = Instance.new("BodyVelocity")
+            bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            bodyVelocity.Velocity = Vector3.zero
+            bodyVelocity.Parent = hrp
+
+            flyConnection = RunService.RenderStepped:Connect(function()
+                if not bodyGyro.Parent or not bodyVelocity.Parent then return end
+
+                local camCFrame = Camera.CFrame
+                local lookVec = camCFrame.LookVector
+                local rightVec = camCFrame.RightVector
+
+                if autoSpinEnabled then
+                    bodyGyro.MaxTorque = Vector3.new(9e9, 0, 9e9)
+                else
+                    bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+                    bodyGyro.CFrame = camCFrame
+                end
+
+                local moveDir = Vector3.zero
+
+                if UserInputService.KeyboardEnabled then
+                    if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir += lookVec end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir -= lookVec end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir -= rightVec end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir += rightVec end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir += Vector3.new(0, 1, 0) end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir -= Vector3.new(0, 1, 0) end
+                end
+
+                if hum and hum.MoveDirection.Magnitude > 0.1 then
+                    local md = hum.MoveDirection
+                    local lookFlat = Vector3.new(lookVec.X, 0, lookVec.Z)
+                    local rightFlat = Vector3.new(rightVec.X, 0, rightVec.Z)
+                    if lookFlat.Magnitude > 0.001 then lookFlat = lookFlat.Unit end
+                    if rightFlat.Magnitude > 0.001 then rightFlat = rightFlat.Unit end
+                    local fwdAmount = lookFlat:Dot(md)
+                    local rightAmount = rightFlat:Dot(md)
+                    moveDir += lookVec * fwdAmount
+                    moveDir += rightVec * rightAmount
+                end
+
+                local speed = (hum.WalkSpeed > 16) and hum.WalkSpeed or 50
+                if moveDir.Magnitude < 0.1 then
+                    bodyVelocity.Velocity = Vector3.zero
+                else
+                    bodyVelocity.Velocity = moveDir.Unit * speed
+                end
+                hum.PlatformStand = true
+            end)
+        else
+            if flyConnection then flyConnection:Disconnect() end
+            for _, name in ipairs({"BodyGyro", "BodyVelocity"}) do
+                local obj = hrp:FindFirstChild(name)
+                if obj then obj:Destroy() end
+            end
+            hum.PlatformStand = false
+        end
+    end,
+})
+
+local NoclipToggle = MainTab:CreateToggle({
+    Name = "NoClip",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            local cachedParts = {}
+            local cachedChar = nil
+
+            local function refreshParts()
+                table.clear(cachedParts)
+                local char = LocalPlayer.Character
+                cachedChar = char
+                if not char then return end
+                for _, v in ipairs(char:GetDescendants()) do
+                    if v:IsA("BasePart") then
+                        table.insert(cachedParts, v)
+                    end
+                end
+            end
+
+            refreshParts()
+            noclipConnection = RunService.Stepped:Connect(function()
+                local char = LocalPlayer.Character
+                if char ~= cachedChar then
+                    refreshParts()
+                end
+                for i = #cachedParts, 1, -1 do
+                    local v = cachedParts[i]
+                    if v and v.Parent then
+                        if v.CanCollide then v.CanCollide = false end
+                    else
+                        table.remove(cachedParts, i)
+                    end
+                end
+            end)
+        else
+            if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+            local char = LocalPlayer.Character
+            if char then
+                for _, v in ipairs(char:GetDescendants()) do
+                    if v:IsA("BasePart") then v.CanCollide = true end
+                end
+            end
+        end
+    end,
+})
+
+WavesTab:CreateSection("Main Controls")
+
+local WaveRemoveToggle = WavesTab:CreateToggle({
+    Name = "Remove Waves (Smart Detection)",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            stopWaveCleanup()
+            startWaveCleanup()
+            Rayfield:Notify({
+                Title = "Wave Remover Active",
+                Content = "Smart keyword scan running. Aggressive mode optional below.",
+                Duration = 3,
+                Image = "shield",
+            })
+        else
+            stopWaveCleanup()
+        end
+    end,
+})
+
+local WaveAggressiveToggle = WavesTab:CreateToggle({
+    Name = "Aggressive Deep Scan",
+    CurrentValue = false,
+    Callback = function(Value)
+        waveAggressiveMode = Value
+        if #waveRemoverConnections > 0 then
+            stopWaveCleanup()
+            startWaveCleanup()
+        end
+    end,
+})
+
+WavesTab:CreateButton({
+    Name = "Force Cleanup Now",
+    Callback = function()
+        local n = performWaveCleanup()
+        Rayfield:Notify({
+            Title = "Manual Cleanup",
+            Content = "Removed " .. n .. " object(s) this pass.",
+            Duration = 3,
+            Image = "trash-2",
+        })
+    end,
+})
+
+WavesTab:CreateSection("Custom Keywords")
+
+WavesTab:CreateInput({
+    Name = "Add Custom Wave Keyword",
+    PlaceholderText = "e.g. lavablock, rainpart, boom",
+    RemoveTextAfterFocusLost = true,
+    Callback = function(Text)
+        if Text and Text ~= "" then
+            local trimmed = Text:gsub("^%s+", ""):gsub("%s+$", "")
+            if trimmed ~= "" then
+                table.insert(waveCustomKeywords, trimmed)
+                Rayfield:Notify({
+                    Title = "Keyword Added",
+                    Content = "Now matching: " .. trimmed,
+                    Duration = 3,
+                    Image = "plus-circle",
+                })
+            end
+        end
+    end,
+})
+
+WavesTab:CreateButton({
+    Name = "Show Custom Keywords",
+    Callback = function()
+        if #waveCustomKeywords == 0 then
+            Rayfield:Notify({
+                Title = "Custom Keywords",
+                Content = "No custom keywords. Built-in list still active.",
+                Duration = 4,
+                Image = "list",
+            })
+        else
+            Rayfield:Notify({
+                Title = "Custom Keywords (" .. #waveCustomKeywords .. ")",
+                Content = table.concat(waveCustomKeywords, ", "),
+                Duration = 6,
+                Image = "list",
+            })
+        end
+    end,
+})
+
+WavesTab:CreateButton({
+    Name = "Clear Custom Keywords",
+    Callback = function()
+        local n = #waveCustomKeywords
+        table.clear(waveCustomKeywords)
+        Rayfield:Notify({
+            Title = "Cleared",
+            Content = "Removed " .. n .. " custom keyword(s).",
+            Duration = 3,
+            Image = "check-circle",
+        })
+    end,
+})
+
+WavesTab:CreateSection("Diagnostics")
+
+WavesTab:CreateButton({
+    Name = "Wave Stats / List Targets",
+    Callback = function()
+        local found = {}
+        for _, child in ipairs(Workspace:GetChildren()) do
+            if nameMatchesWave(child.Name) then
+                table.insert(found, child.Name)
+            end
+        end
+        local content
+        if #found == 0 then
+            content = "No matching top-level workspace targets. Total removed so far: " .. waveTotalRemoved
+        else
+            content = "Top-level matches: " .. table.concat(found, ", ") .. " | Total removed: " .. waveTotalRemoved
+        end
+        Rayfield:Notify({
+            Title = "Wave Stats",
+            Content = content,
+            Duration = 7,
+            Image = "bar-chart",
+        })
+    end,
+})
+
+local AntiAfkToggle = MainTab:CreateToggle({
+    Name = "Anti-AFK",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            antiAfkConnection = LocalPlayer.Idled:Connect(function()
+                pcall(function()
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new())
+                end)
+            end)
+        else
+            if antiAfkConnection then
+                antiAfkConnection:Disconnect()
+                antiAfkConnection = nil
+            end
+        end
+    end,
+})
+
+local function bindWalkSpeedLock()
+    if walkSpeedLockConn then
+        pcall(function() walkSpeedLockConn:Disconnect() end)
+        walkSpeedLockConn = nil
+    end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    if hum.WalkSpeed ~= savedSettings.WalkSpeed then
+        hum.WalkSpeed = savedSettings.WalkSpeed
+    end
+
+    walkSpeedLockConn = hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+        if not walkSpeedLockEnabled then return end
+        if hum.WalkSpeed ~= savedSettings.WalkSpeed then
+            hum.WalkSpeed = savedSettings.WalkSpeed
+        end
+    end)
+end
+
+local function startWalkSpeedLock()
+    bindWalkSpeedLock()
+    if walkSpeedCharConn then pcall(function() walkSpeedCharConn:Disconnect() end) end
+    walkSpeedCharConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        if not walkSpeedLockEnabled then return end
+        newChar:WaitForChild("Humanoid", 5)
+        task.wait(0.2)
+        if walkSpeedLockEnabled then bindWalkSpeedLock() end
+    end)
+end
+
+local function stopWalkSpeedLock()
+    if walkSpeedLockConn then
+        pcall(function() walkSpeedLockConn:Disconnect() end)
+        walkSpeedLockConn = nil
+    end
+    if walkSpeedCharConn then
+        pcall(function() walkSpeedCharConn:Disconnect() end)
+        walkSpeedCharConn = nil
+    end
+end
+
+local function bindJumpPowerLock()
+    if jumpPowerLockConn then
+        pcall(function() jumpPowerLockConn:Disconnect() end)
+        jumpPowerLockConn = nil
+    end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    pcall(function() hum.UseJumpPower = true end)
+    if hum.JumpPower ~= savedSettings.JumpPower then
+        hum.JumpPower = savedSettings.JumpPower
+    end
+
+    jumpPowerLockConn = hum:GetPropertyChangedSignal("JumpPower"):Connect(function()
+        if not jumpPowerLockEnabled then return end
+        if hum.JumpPower ~= savedSettings.JumpPower then
+            hum.JumpPower = savedSettings.JumpPower
+        end
+    end)
+end
+
+local function startJumpPowerLock()
+    bindJumpPowerLock()
+    if jumpPowerCharConn then pcall(function() jumpPowerCharConn:Disconnect() end) end
+    jumpPowerCharConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        if not jumpPowerLockEnabled then return end
+        newChar:WaitForChild("Humanoid", 5)
+        task.wait(0.2)
+        if jumpPowerLockEnabled then bindJumpPowerLock() end
+    end)
+end
+
+local function stopJumpPowerLock()
+    if jumpPowerLockConn then
+        pcall(function() jumpPowerLockConn:Disconnect() end)
+        jumpPowerLockConn = nil
+    end
+    if jumpPowerCharConn then
+        pcall(function() jumpPowerCharConn:Disconnect() end)
+        jumpPowerCharConn = nil
+    end
+end
+
+MovementTab:CreateSlider({
+    Name = "WalkSpeed",
+    Range = {16, 500},
+    Increment = 1,
+    Suffix = "Studs/s",
+    CurrentValue = 16,
+    Callback = function(Value)
+        savedSettings.WalkSpeed = Value
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+        if hum then hum.WalkSpeed = Value end
+    end,
+})
+
+local WalkSpeedLockToggle = MovementTab:CreateToggle({
+    Name = "Lock WalkSpeed (Anti-Reset)",
+    CurrentValue = false,
+    Callback = function(Value)
+        walkSpeedLockEnabled = Value
+        if Value then
+            startWalkSpeedLock()
+            Rayfield:Notify({
+                Title = "WalkSpeed Locked",
+                Content = "Game cannot reset your WalkSpeed anymore.",
+                Duration = 3,
+                Image = "lock",
+            })
+        else
+            stopWalkSpeedLock()
+        end
+    end,
+})
+
+MovementTab:CreateSlider({
+    Name = "JumpPower",
+    Range = {50, 500},
+    Increment = 1,
+    Suffix = "Power",
+    CurrentValue = 50,
+    Callback = function(Value)
+        savedSettings.JumpPower = Value
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+        if hum then
+            hum.JumpPower = Value
+            hum.UseJumpPower = true
+        end
+    end,
+})
+
+local JumpPowerLockToggle = MovementTab:CreateToggle({
+    Name = "Lock JumpPower (Anti-Reset)",
+    CurrentValue = false,
+    Callback = function(Value)
+        jumpPowerLockEnabled = Value
+        if Value then
+            startJumpPowerLock()
+            Rayfield:Notify({
+                Title = "JumpPower Locked",
+                Content = "Game cannot reset your JumpPower anymore.",
+                Duration = 3,
+                Image = "lock",
+            })
+        else
+            stopJumpPowerLock()
+        end
+    end,
+})
+
+local InfJumpToggle = MovementTab:CreateToggle({
+    Name = "Infinite Air Jump",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            infiniteJumpConnection = UserInputService.JumpRequest:Connect(function()
+                local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+                if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+            end)
+        else
+            if infiniteJumpConnection then infiniteJumpConnection:Disconnect() end
+        end
+    end,
+})
+
+local function startAutoWalk()
+    pcall(function()
+        RunService:UnbindFromRenderStep("DeltaAutoWalk")
+    end)
+    pcall(function()
+        RunService:BindToRenderStep("DeltaAutoWalk", Enum.RenderPriority.Character.Value + 1, function()
+            if not autoWalkEnabled then return end
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then return end
+
+            local lookVec = Camera.CFrame.LookVector
+            local horizontal = Vector3.new(lookVec.X, 0, lookVec.Z)
+            if horizontal.Magnitude < 0.001 then return end
+            horizontal = horizontal.Unit
+            pcall(function()
+                hum:Move(horizontal, false)
+            end)
+        end)
+    end)
+end
+
+local function stopAutoWalk()
+    pcall(function()
+        RunService:UnbindFromRenderStep("DeltaAutoWalk")
+    end)
+    if autoWalkConnection then
+        autoWalkConnection:Disconnect()
+        autoWalkConnection = nil
+    end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function() hum:Move(Vector3.zero, false) end)
+    end
+end
+
+local function attachAutoJumpToHumanoid(hum)
+    if autoJumpStateConnection then
+        autoJumpStateConnection:Disconnect()
+        autoJumpStateConnection = nil
+    end
+    if not hum then return end
+
+    autoJumpStateConnection = hum.StateChanged:Connect(function(_, newState)
+        if not autoJumpEnabled then return end
+        if newState == Enum.HumanoidStateType.Landed then
+            task.wait(0.03)
+            if autoJumpEnabled and hum.Parent then
+                pcall(function()
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end)
+            end
+        end
+    end)
+
+    if hum.FloorMaterial ~= Enum.Material.Air then
+        pcall(function()
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end)
+    end
+end
+
+local function startAutoJump()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    attachAutoJumpToHumanoid(hum)
+
+    if autoJumpCharConnection then
+        autoJumpCharConnection:Disconnect()
+    end
+    autoJumpCharConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        local newHum = newChar:WaitForChild("Humanoid", 5)
+        if autoJumpEnabled and newHum then
+            attachAutoJumpToHumanoid(newHum)
+        end
+    end)
+
+    if not autoJumpHeartbeatConnection then
+        autoJumpHeartbeatConnection = RunService.Heartbeat:Connect(function()
+            if not autoJumpEnabled then return end
+            local c = LocalPlayer.Character
+            local h = c and c:FindFirstChildOfClass("Humanoid")
+            if not h or h.Health <= 0 then return end
+            local state = h:GetState()
+            if h.FloorMaterial ~= Enum.Material.Air
+                and state ~= Enum.HumanoidStateType.Jumping
+                and state ~= Enum.HumanoidStateType.Freefall then
+                pcall(function()
+                    h:ChangeState(Enum.HumanoidStateType.Jumping)
+                end)
+            end
+        end)
+    end
+end
+
+local function stopAutoJump()
+    if autoJumpStateConnection then
+        autoJumpStateConnection:Disconnect()
+        autoJumpStateConnection = nil
+    end
+    if autoJumpCharConnection then
+        autoJumpCharConnection:Disconnect()
+        autoJumpCharConnection = nil
+    end
+    if autoJumpHeartbeatConnection then
+        autoJumpHeartbeatConnection:Disconnect()
+        autoJumpHeartbeatConnection = nil
+    end
+end
+
+local AutoWalkToggle = MovementTab:CreateToggle({
+    Name = "Auto Walk (Camera Direction)",
+    CurrentValue = false,
+    Callback = function(Value)
+        autoWalkEnabled = Value
+        if Value then
+            startAutoWalk()
+            Rayfield:Notify({
+                Title = "Auto Walk ON",
+                Content = "Walking toward camera direction. Aim camera to steer.",
+                Duration = 3,
+                Image = "navigation",
+            })
+        else
+            stopAutoWalk()
+        end
+    end,
+})
+
+local AutoJumpToggle = MovementTab:CreateToggle({
+    Name = "Auto Jump",
+    CurrentValue = false,
+    Callback = function(Value)
+        autoJumpEnabled = Value
+        if Value then
+            startAutoJump()
+        else
+            stopAutoJump()
+        end
+    end,
+})
+
+local BhopToggle = MovementTab:CreateToggle({
+    Name = "Bhop Combo (Auto Walk + Auto Jump)",
+    CurrentValue = false,
+    Callback = function(Value)
+        autoWalkEnabled = Value
+        autoJumpEnabled = Value
+        if Value then
+            startAutoWalk()
+            startAutoJump()
+            Rayfield:Notify({
+                Title = "Bhop ON",
+                Content = "Auto walking and jumping. Aim camera to steer.",
+                Duration = 3,
+                Image = "rabbit",
+            })
+        else
+            stopAutoWalk()
+            stopAutoJump()
+        end
+    end,
+})
+
+local function startAutoSpin()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hum or not hrp then return end
+
+    pcall(function() hum.AutoRotate = false end)
+
+    if autoSpinBAV then
+        pcall(function() autoSpinBAV:Destroy() end)
+        autoSpinBAV = nil
+    end
+
+    autoSpinBAV = Instance.new("BodyAngularVelocity")
+    autoSpinBAV.Name = "DeltaAutoSpin"
+    autoSpinBAV.MaxTorque = Vector3.new(0, 9e9, 0)
+    autoSpinBAV.AngularVelocity = Vector3.new(0, math.rad(360) * autoSpinSpeed, 0)
+    autoSpinBAV.P = 1250
+    autoSpinBAV.Parent = hrp
+end
+
+local function stopAutoSpin()
+    if autoSpinBAV then
+        pcall(function() autoSpinBAV:Destroy() end)
+        autoSpinBAV = nil
+    end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function() hum.AutoRotate = true end)
+    end
+end
+
+local AutoSpinToggle = MovementTab:CreateToggle({
+    Name = "Auto Spin (Rotate Character)",
+    CurrentValue = false,
+    Callback = function(Value)
+        autoSpinEnabled = Value
+        if Value then
+            startAutoSpin()
+        else
+            stopAutoSpin()
+        end
+    end,
+})
+
+MovementTab:CreateSlider({
+    Name = "Auto Spin Speed",
+    Range = {1, 30},
+    Increment = 1,
+    Suffix = "rev/s",
+    CurrentValue = 5,
+    Callback = function(Value)
+        autoSpinSpeed = Value
+        if autoSpinBAV then
+            autoSpinBAV.AngularVelocity = Vector3.new(0, math.rad(360) * Value, 0)
+        end
+    end,
+})
+
+local function createESP(player)
+    if player == LocalPlayer then return end
+    if espPlayerData[player] then return end
+    local function onCharacter(character)
+        local head = character:WaitForChild("Head", 5)
+        if not head then return end
+        if head:FindFirstChild("EspTag") then return end
+        local bill = Instance.new("BillboardGui")
+        bill.Name = "EspTag"
+        bill.Size = UDim2.new(0, 100, 0, 40)
+        bill.StudsOffset = Vector3.new(0, 2, 0)
+        bill.AlwaysOnTop = true
+        local tl = Instance.new("TextLabel")
+        tl.Text = player.Name
+        tl.Size = UDim2.new(1, 0, 1, 0)
+        tl.BackgroundTransparency = 1
+        tl.TextColor3 = Color3.fromRGB(255, 50, 50)
+        tl.TextStrokeTransparency = 0
+        tl.Parent = bill
+        bill.Parent = head
+        espPlayerData[player] = bill
+    end
+    if player.Character then onCharacter(player.Character) end
+    player.CharacterAdded:Connect(onCharacter)
+end
+
+local function clearESP()
+    for player, bill in pairs(espPlayerData) do
+        if bill then bill:Destroy() end
+    end
+    table.clear(espPlayerData)
+end
+
+local EspToggle = VisualTab:CreateToggle({
+    Name = "Player ESP",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            for _, player in ipairs(Players:GetPlayers()) do createESP(player) end
+            Players.PlayerAdded:Connect(createESP)
+            local function onRemove(player)
+                if espPlayerData[player] then
+                    espPlayerData[player]:Destroy()
+                    espPlayerData[player] = nil
+                end
+            end
+            Players.PlayerRemoving:Connect(onRemove)
+            espActive = true
+        else
+            clearESP()
+            espActive = false
+        end
+    end,
+})
+
+local FullbrightToggle = VisualTab:CreateToggle({
+    Name = "Fullbright",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            originalLighting.Brightness = Lighting.Brightness
+            originalLighting.ClockTime = Lighting.ClockTime
+            originalLighting.FogEnd = Lighting.FogEnd
+            originalLighting.GlobalShadows = Lighting.GlobalShadows
+            originalLighting.Ambient = Lighting.Ambient
+            originalLighting.OutdoorAmbient = Lighting.OutdoorAmbient
+
+            Lighting.Brightness = 2
+            Lighting.ClockTime = 14
+            Lighting.FogEnd = 1e6
+            Lighting.GlobalShadows = false
+            Lighting.Ambient = Color3.fromRGB(178, 178, 178)
+            Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
+            fullbrightActive = true
+        else
+            if fullbrightActive then
+                Lighting.Brightness = originalLighting.Brightness or 2
+                Lighting.ClockTime = originalLighting.ClockTime or 14
+                Lighting.FogEnd = originalLighting.FogEnd or 1e6
+                Lighting.GlobalShadows = originalLighting.GlobalShadows or true
+                Lighting.Ambient = originalLighting.Ambient or Color3.fromRGB(0, 0, 0)
+                Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient or Color3.fromRGB(127, 127, 127)
+                fullbrightActive = false
+            end
+        end
+    end,
+})
+
+VisualTab:CreateSlider({
+    Name = "Camera FOV",
+    Range = {30, 120},
+    Increment = 1,
+    Suffix = "deg",
+    CurrentValue = 70,
+    Callback = function(Value)
+        savedSettings.FOV = Value
+        Camera.FieldOfView = Value
+    end,
+})
+
+local UpsideDownToggle = VisualTab:CreateToggle({
+    Name = "Upside-Down Camera",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            upsideDownActive = true
+            local ok = pcall(function()
+                RunService:BindToRenderStep("UpsideDownCam", Enum.RenderPriority.Camera.Value + 1, function()
+                    if upsideDownActive then
+                        Camera.CFrame = Camera.CFrame * CFrame.Angles(0, 0, math.pi)
+                    end
+                end)
+            end)
+            if not ok then
+                upsideDownActive = false
+                Rayfield:Notify({
+                    Title = "Error",
+                    Content = "Could not bind to render step.",
+                    Duration = 3,
+                    Image = "x-circle",
+                })
+            end
+        else
+            upsideDownActive = false
+            pcall(function()
+                RunService:UnbindFromRenderStep("UpsideDownCam")
+            end)
+        end
+    end,
+})
+
+local FpsToggle = VisualTab:CreateToggle({
+    Name = "FPS Counter",
+    CurrentValue = false,
+    Callback = function(Value)
+        fpsEnabled = Value
+        ensureHud()
+        if fpsLabel then fpsLabel.Visible = Value end
+        if Value then
+            startHud()
+        else
+            stopHudIfIdle()
+        end
+    end,
+})
+
+local PingToggle = VisualTab:CreateToggle({
+    Name = "Ping / Lag Indicator",
+    CurrentValue = false,
+    Callback = function(Value)
+        pingEnabled = Value
+        ensureHud()
+        if pingLabel then pingLabel.Visible = Value end
+        if Value then
+            startHud()
+        else
+            stopHudIfIdle()
+        end
+    end,
+})
+
+local KeyStrokesToggle = VisualTab:CreateToggle({
+    Name = "KeyStrokes Overlay (PC + Mobile)",
+    CurrentValue = false,
+    Callback = function(Value)
+        keysEnabled = Value
+        ensureHud()
+        if keysFrame then keysFrame.Visible = Value end
+        if Value then
+            startHud()
+        else
+            stopHudIfIdle()
+            if not Value then
+                for _, entry in pairs(keyVisuals) do
+                    setKeyVisual(entry, false)
+                end
+            end
+        end
+    end,
+})
+
+local RepositionHudToggle = VisualTab:CreateToggle({
+    Name = "Reposition HUD (Drag FPS / Ping / Keys)",
+    CurrentValue = false,
+    Callback = function(Value)
+        hudRepositionMode = Value
+        ensureHud()
+        refreshRepositionVisuals()
+        if Value then
+            if fpsLabel and not fpsEnabled then fpsLabel.Visible = true end
+            if pingLabel and not pingEnabled then pingLabel.Visible = true end
+            if keysFrame and not keysEnabled then keysFrame.Visible = true end
+            Rayfield:Notify({
+                Title = "Reposition Mode ON",
+                Content = "Drag any HUD element to move it. Toggle off to lock.",
+                Duration = 4,
+                Image = "move",
+            })
+        else
+            if fpsLabel and not fpsEnabled then fpsLabel.Visible = false end
+            if pingLabel and not pingEnabled then pingLabel.Visible = false end
+            if keysFrame and not keysEnabled then keysFrame.Visible = false end
+        end
+    end,
+})
+
+VisualTab:CreateButton({
+    Name = "Reset HUD Positions",
+    Callback = function()
+        ensureHud()
+        if fpsLabel then fpsLabel.Position = UDim2.new(1, -12, 0, 12) end
+        if pingLabel then pingLabel.Position = UDim2.new(1, -12, 0, 44) end
+        if keysFrame then keysFrame.Position = UDim2.new(0, 20, 1, -20) end
+        Rayfield:Notify({
+            Title = "HUD Reset",
+            Content = "All HUD elements moved back to defaults.",
+            Duration = 3,
+            Image = "rotate-ccw",
+        })
+    end,
+})
+
+local AimbotToggle = CombatTab:CreateToggle({
+    Name = "Aimbot (Wall-Check)",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            aimbotConnection = RunService.RenderStepped:Connect(function()
+                local target = GetClosestVisiblePlayer(1000)
+                if target and target.Character and target.Character:FindFirstChild("Head") then
+                    local hum = target.Character:FindFirstChild("Humanoid")
+                    if hum and hum.Health > 0 then
+                        local headPos = target.Character.Head.Position
+                        Camera.CFrame = CFrame.new(Camera.CFrame.Position, headPos)
+                    end
+                end
+            end)
+        else
+            if aimbotConnection then aimbotConnection:Disconnect() end
+        end
+    end,
+})
+
+local HitboxToggle = CombatTab:CreateToggle({
+    Name = "Hitbox (Red Glow)",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            local function addHighlight(player)
+                if player == LocalPlayer or hitboxHighlights[player] then return end
+                local char = player.Character
+                if not char then return end
+                local highlight = Instance.new("Highlight")
+                highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                highlight.OutlineColor = Color3.fromRGB(255, 100, 100)
+                highlight.FillTransparency = 0.6
+                highlight.OutlineTransparency = 0
+                highlight.Parent = char
+                hitboxHighlights[player] = highlight
+            end
+
+            for _, player in ipairs(Players:GetPlayers()) do addHighlight(player) end
+            local function charAdded(char)
+                local player = Players:GetPlayerFromCharacter(char)
+                if player then addHighlight(player) end
+            end
+            local addedCon = Players.PlayerAdded:Connect(function(player)
+                if player.Character then addHighlight(player) end
+                player.CharacterAdded:Connect(charAdded)
+            end)
+            local removingCon = Players.PlayerRemoving:Connect(function(player)
+                if hitboxHighlights[player] then
+                    hitboxHighlights[player]:Destroy()
+                    hitboxHighlights[player] = nil
+                end
+            end)
+            hitboxConnection = {addedCon, removingCon}
+        else
+            for player, highlight in pairs(hitboxHighlights) do
+                if highlight then highlight:Destroy() end
+            end
+            table.clear(hitboxHighlights)
+            if hitboxConnection then
+                for _, con in ipairs(hitboxConnection) do con:Disconnect() end
+                hitboxConnection = nil
+            end
+        end
+    end,
+})
+
+local CamLockToggle = CombatTab:CreateToggle({
+    Name = "Camera Lock",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            local lockedCFrame = Camera.CFrame
+            cameraLockConnection = RunService.RenderStepped:Connect(function()
+                Camera.CFrame = lockedCFrame
+            end)
+        else
+            if cameraLockConnection then cameraLockConnection:Disconnect() end
+        end
+    end,
+})
+
+local SlotDropdown = TeleportTab:CreateDropdown({
+    Name = "Select Slot",
+    Options = {"Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5"},
+    CurrentOption = {"Slot 1"},
+    MultipleOptions = false,
+    Flag = "TeleportSlot",
+    Callback = function(Option)
+        local num = parseSlotOption(Option)
+        if num and num >= 1 and num <= 5 then
+            currentTeleportSlot = num
+        end
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "Save Position to Slot",
+    Callback = function()
+        local slot = getCurrentSlot()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            savedPositions[slot] = char.HumanoidRootPart.Position
+            Rayfield:Notify({
+                Title = "Saved",
+                Content = "Position saved to Slot " .. tostring(slot),
+                Duration = 3,
+                Image = "check-circle",
+            })
+        else
+            Rayfield:Notify({
+                Title = "Error",
+                Content = "Character not found!",
+                Duration = 3,
+                Image = "x-circle",
+            })
+        end
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "Teleport to Slot",
+    Callback = function()
+        local slot = getCurrentSlot()
+        local pos = savedPositions[slot]
+        if pos then
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local rot = hrp.CFrame - hrp.CFrame.Position
+                hrp.CFrame = CFrame.new(pos) * rot
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                Rayfield:Notify({
+                    Title = "Teleported",
+                    Content = "Teleported to Slot " .. tostring(slot),
+                    Duration = 3,
+                    Image = "check-circle",
+                })
+            else
+                Rayfield:Notify({
+                    Title = "Error",
+                    Content = "Character not found!",
+                    Duration = 3,
+                    Image = "x-circle",
+                })
+            end
+        else
+            Rayfield:Notify({
+                Title = "Empty Slot",
+                Content = "Slot " .. tostring(slot) .. " is empty. Save a position first.",
+                Duration = 3,
+                Image = "alert-triangle",
+            })
+        end
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "Clear Slot",
+    Callback = function()
+        local slot = getCurrentSlot()
+        savedPositions[slot] = nil
+        Rayfield:Notify({
+            Title = "Cleared",
+            Content = "Slot " .. tostring(slot) .. " has been cleared.",
+            Duration = 3,
+            Image = "check-circle",
+        })
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "Show Saved Slots",
+    Callback = function()
+        local lines = {}
+        for i = 1, 5 do
+            if savedPositions[i] then
+                local p = savedPositions[i]
+                table.insert(lines, "Slot " .. i .. ": " .. math.floor(p.X) .. ", " .. math.floor(p.Y) .. ", " .. math.floor(p.Z))
+            else
+                table.insert(lines, "Slot " .. i .. ": empty")
+            end
+        end
+        Rayfield:Notify({
+            Title = "Saved Slots",
+            Content = table.concat(lines, "\n"),
+            Duration = 6,
+            Image = "list",
+        })
+    end,
+})
+
+TeleportTab:CreateSection("Player Teleport")
+
+local function getPlayerNameList()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(names, p.Name)
+        end
+    end
+    if #names == 0 then
+        table.insert(names, "No other players")
+    end
+    return names
+end
+
+local PlayerTpDropdown = TeleportTab:CreateDropdown({
+    Name = "Select Player",
+    Options = getPlayerNameList(),
+    CurrentOption = {},
+    MultipleOptions = false,
+    Flag = "PlayerTpTarget",
+    Callback = function(Option) end,
+})
+
+local function getSelectedPlayerName()
+    local ok, flag = pcall(function()
+        return Rayfield.Flags and Rayfield.Flags["PlayerTpTarget"]
+    end)
+    if ok and flag then
+        local opt = flag.CurrentOption
+        if type(opt) == "table" then opt = opt[1] end
+        if type(opt) == "string" then return opt end
+    end
+    return nil
+end
+
+TeleportTab:CreateButton({
+    Name = "Refresh Player List",
+    Callback = function()
+        local names = getPlayerNameList()
+        pcall(function()
+            PlayerTpDropdown:Refresh(names, false)
+        end)
+        Rayfield:Notify({
+            Title = "Player List Updated",
+            Content = #Players:GetPlayers() - 1 .. " other player(s) in server.",
+            Duration = 3,
+            Image = "users",
+        })
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "Teleport to Player",
+    Callback = function()
+        local name = getSelectedPlayerName()
+        if not name or name == "No other players" then
+            Rayfield:Notify({
+                Title = "No Selection",
+                Content = "Pick a player from the dropdown first.",
+                Duration = 3,
+                Image = "alert-triangle",
+            })
+            return
+        end
+        local target = Players:FindFirstChild(name)
+        local targetHrp = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if targetHrp and hrp then
+            local rot = hrp.CFrame - hrp.CFrame.Position
+            hrp.CFrame = CFrame.new(targetHrp.Position + Vector3.new(0, 3, 0)) * rot
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            Rayfield:Notify({
+                Title = "Teleported",
+                Content = "Teleported to " .. name,
+                Duration = 3,
+                Image = "check-circle",
+            })
+        else
+            Rayfield:Notify({
+                Title = "Error",
+                Content = name .. " has no character right now.",
+                Duration = 3,
+                Image = "x-circle",
+            })
+        end
+    end,
+})
+
+local playerTpRefreshConns = {}
+table.insert(playerTpRefreshConns, Players.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    pcall(function() PlayerTpDropdown:Refresh(getPlayerNameList(), false) end)
+end))
+table.insert(playerTpRefreshConns, Players.PlayerRemoving:Connect(function()
+    task.wait(0.5)
+    pcall(function() PlayerTpDropdown:Refresh(getPlayerNameList(), false) end)
+end))
+
+local function teleportToScreenPos(screenX, screenY)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local ray = Camera:ScreenPointToRay(screenX, screenY)
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {char}
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+    local result = Workspace:Raycast(ray.Origin, ray.Direction * 5000, rayParams)
+    if result then
+        hrp.CFrame = CFrame.new(result.Position + Vector3.new(0, 3, 0))
+        return true
+    end
+    return false
+end
+
+local ClickTpToggle = TeleportTab:CreateToggle({
+    Name = "Click Teleport (PC: T or RClick / Mobile: Tap)",
+    CurrentValue = false,
+    Callback = function(Value)
+        if Value then
+            local kbConn = UserInputService.InputBegan:Connect(function(input, processed)
+                if processed then return end
+                if input.KeyCode == Enum.KeyCode.T or input.UserInputType == Enum.UserInputType.MouseButton2 then
+                    if Mouse.Hit then
+                        local char = LocalPlayer.Character
+                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            hrp.CFrame = CFrame.new(Mouse.Hit.Position + Vector3.new(0, 3, 0))
+                        end
+                    end
+                end
+            end)
+            table.insert(clickTpConnections, kbConn)
+
+            local touchConn = UserInputService.TouchTapInWorld:Connect(function(position, processedByUI)
+                if processedByUI then return end
+                teleportToScreenPos(position.X, position.Y)
+            end)
+            table.insert(clickTpConnections, touchConn)
+
+            Rayfield:Notify({
+                Title = "Click TP Active",
+                Content = "PC: aim and press T or right-click. Mobile: tap any spot.",
+                Duration = 4,
+                Image = "mouse-pointer",
+            })
+        else
+            for _, conn in ipairs(clickTpConnections) do
+                if conn then pcall(function() conn:Disconnect() end) end
+            end
+            table.clear(clickTpConnections)
+        end
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Reset Character",
+    Callback = function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if godModeEnabled then
+                disableGodMode()
+                task.wait(0.1)
+            end
+            hum.Health = 0
+        end
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Rejoin Server",
+    Callback = function()
+        local TeleportService = game:GetService("TeleportService")
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Server Hop (Random)",
+    Callback = function()
+        local TeleportService = game:GetService("TeleportService")
+        local HttpService = game:GetService("HttpService")
+        local servers = {}
+        local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+        if not req then
+            Rayfield:Notify({
+                Title = "Unsupported",
+                Content = "Your executor doesn't support HTTP requests.",
+                Duration = 4,
+                Image = "x-circle",
+            })
+            return
+        end
+        local ok, resp = pcall(function()
+            return req({
+                Url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100",
+                Method = "GET"
+            })
+        end)
+        if ok and resp and resp.Body then
+            local data = HttpService:JSONDecode(resp.Body)
+            for _, s in ipairs(data.data or {}) do
+                if s.playing < s.maxPlayers and s.id ~= game.JobId then
+                    table.insert(servers, s.id)
+                end
+            end
+            if #servers > 0 then
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)], LocalPlayer)
+            else
+                Rayfield:Notify({
+                    Title = "No Servers",
+                    Content = "Couldn't find another available server.",
+                    Duration = 3,
+                    Image = "alert-triangle",
+                })
+            end
+        end
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Destroy Hub",
+    Callback = function()
+        Rayfield:Destroy()
+    end,
+})
+
+if Mm2Tab then
+    local MURDERER_COLOR = Color3.fromRGB(255, 50, 50)
+    local SHERIFF_COLOR = Color3.fromRGB(60, 130, 255)
+    local INNOCENT_COLOR = Color3.fromRGB(180, 180, 180)
+
+    local mm2EspEnabled = false
+    local mm2EspData = {}
+    local mm2EspConnections = {}
+
+    local mm2AutoCoinEnabled = false
+    local mm2OriginalPos = nil
+
+    local mm2WeaponEspEnabled = false
+    local mm2WeaponEspData = {}
+    local mm2WeaponLoopActive = false
+
+    local mm2DeathAlertEnabled = false
+    local mm2TrackedRoles = {}
+    local mm2DeathLoopActive = false
+
+    local function hasMatchingTool(parent, keyword)
+        if not parent then return false end
+        for _, item in ipairs(parent:GetChildren()) do
+            if item:IsA("Tool") and string.find(string.lower(item.Name), keyword, 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function getPlayerRole(player)
+        local backpack = player:FindFirstChildOfClass("Backpack")
+        local character = player.Character
+        if hasMatchingTool(backpack, "knife") or hasMatchingTool(character, "knife") then
+            return "Murderer"
+        elseif hasMatchingTool(backpack, "gun") or hasMatchingTool(character, "gun")
+            or hasMatchingTool(backpack, "revolver") or hasMatchingTool(character, "revolver") then
+            return "Sheriff"
+        else
+            return "Innocent"
+        end
+    end
+
+    local function roleColor(role)
+        if role == "Murderer" then return MURDERER_COLOR
+        elseif role == "Sheriff" then return SHERIFF_COLOR
+        else return INNOCENT_COLOR end
+    end
+
+    local function applyEsp(player)
+        if player == LocalPlayer then return end
+        if not mm2EspEnabled then return end
+        local character = player.Character
+        if not character then return end
+
+        local data = mm2EspData[player]
+        if not data then
+            data = {}
+            mm2EspData[player] = data
+        end
+
+        local role = getPlayerRole(player)
+        local color = roleColor(role)
+
+        if not data.highlight or not data.highlight.Parent then
+            if data.highlight then pcall(function() data.highlight:Destroy() end) end
+            data.highlight = Instance.new("Highlight")
+            data.highlight.FillTransparency = 0.5
+            data.highlight.OutlineTransparency = 0
+        end
+        data.highlight.FillColor = color
+        data.highlight.OutlineColor = color
+        data.highlight.Parent = character
+
+        local head = character:FindFirstChild("Head")
+        if head then
+            if not data.billboard or not data.billboard.Parent then
+                if data.billboard then pcall(function() data.billboard:Destroy() end) end
+                data.billboard = Instance.new("BillboardGui")
+                data.billboard.Size = UDim2.new(0, 160, 0, 40)
+                data.billboard.StudsOffset = Vector3.new(0, 3, 0)
+                data.billboard.AlwaysOnTop = true
+                local tl = Instance.new("TextLabel")
+                tl.Size = UDim2.new(1, 0, 1, 0)
+                tl.BackgroundTransparency = 1
+                tl.Font = Enum.Font.GothamBold
+                tl.TextSize = 14
+                tl.TextStrokeTransparency = 0
+                tl.Name = "Label"
+                tl.Parent = data.billboard
+                data.billboard.Parent = head
+            end
+            local label = data.billboard:FindFirstChild("Label")
+            if label then
+                label.Text = player.Name .. " [" .. role .. "]"
+                label.TextColor3 = color
+            end
+        end
+    end
+
+    local function clearEspFor(player)
+        local data = mm2EspData[player]
+        if data then
+            if data.highlight then pcall(function() data.highlight:Destroy() end) end
+            if data.billboard then pcall(function() data.billboard:Destroy() end) end
+        end
+        mm2EspData[player] = nil
+    end
+
+    local mm2PlayerBackpackConns = {}
+
+    local function hookBackpack(player)
+        if mm2PlayerBackpackConns[player] then
+            for _, c in ipairs(mm2PlayerBackpackConns[player]) do
+                pcall(function() c:Disconnect() end)
+            end
+        end
+        mm2PlayerBackpackConns[player] = {}
+
+        local backpack = player:FindFirstChildOfClass("Backpack")
+        if backpack then
+            local bConn1 = backpack.ChildAdded:Connect(function()
+                if mm2EspEnabled then
+                    task.wait(0.1)
+                    applyEsp(player)
+                end
+            end)
+            local bConn2 = backpack.ChildRemoved:Connect(function()
+                if mm2EspEnabled then
+                    task.wait(0.1)
+                    applyEsp(player)
+                end
+            end)
+            table.insert(mm2PlayerBackpackConns[player], bConn1)
+            table.insert(mm2PlayerBackpackConns[player], bConn2)
+        end
+        local char = player.Character
+        if char then
+            local cConn1 = char.ChildAdded:Connect(function(c)
+                if mm2EspEnabled and c:IsA("Tool") then
+                    task.wait(0.1)
+                    applyEsp(player)
+                end
+            end)
+            local cConn2 = char.ChildRemoved:Connect(function(c)
+                if mm2EspEnabled and c:IsA("Tool") then
+                    task.wait(0.1)
+                    applyEsp(player)
+                end
+            end)
+            table.insert(mm2PlayerBackpackConns[player], cConn1)
+            table.insert(mm2PlayerBackpackConns[player], cConn2)
+        end
+    end
+
+    local function hookPlayer(player)
+        local addedConn = player.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            if mm2EspEnabled then
+                hookBackpack(player)
+                applyEsp(player)
+            end
+        end)
+        table.insert(mm2EspConnections, addedConn)
+        hookBackpack(player)
+    end
+
+    local function fullRescan()
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                applyEsp(p)
+            end
+        end
+    end
+
+    local function startMm2Esp()
+        for _, p in ipairs(Players:GetPlayers()) do
+            hookPlayer(p)
+            applyEsp(p)
+        end
+        local joinConn = Players.PlayerAdded:Connect(function(p)
+            hookPlayer(p)
+            task.wait(1)
+            if mm2EspEnabled then applyEsp(p) end
+        end)
+        local leaveConn = Players.PlayerRemoving:Connect(function(p)
+            clearEspFor(p)
+            if mm2PlayerBackpackConns[p] then
+                for _, c in ipairs(mm2PlayerBackpackConns[p]) do
+                    pcall(function() c:Disconnect() end)
+                end
+                mm2PlayerBackpackConns[p] = nil
+            end
+        end)
+        table.insert(mm2EspConnections, joinConn)
+        table.insert(mm2EspConnections, leaveConn)
+
+        local roundConn = LocalPlayer.CharacterAdded:Connect(function()
+            if mm2EspEnabled then
+                task.wait(1)
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer then hookBackpack(p) end
+                end
+                fullRescan()
+            end
+        end)
+        table.insert(mm2EspConnections, roundConn)
+
+        task.spawn(function()
+            while mm2EspEnabled do
+                task.wait(1)
+                if mm2EspEnabled then
+                    fullRescan()
+                end
+            end
+        end)
+    end
+
+    local function stopMm2Esp()
+        for player, conns in pairs(mm2PlayerBackpackConns) do
+            for _, c in ipairs(conns) do
+                pcall(function() c:Disconnect() end)
+            end
+        end
+        table.clear(mm2PlayerBackpackConns)
+        for _, c in ipairs(mm2EspConnections) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(mm2EspConnections)
+        for player, _ in pairs(mm2EspData) do
+            clearEspFor(player)
+        end
+        table.clear(mm2EspData)
+    end
+
+    local function findCoins()
+        local coins = {}
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                local lname = string.lower(obj.Name)
+                if string.find(lname, "coin", 1, true) and not string.find(lname, "spawn", 1, true) then
+                    table.insert(coins, obj)
+                end
+            end
+        end
+        return coins
+    end
+
+    local MM2_COIN_LIMIT = 40
+
+    local function startAutoCoin()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then mm2OriginalPos = hrp.CFrame end
+
+        task.spawn(function()
+            local collected = 0
+            local coinCache = findCoins()
+
+            while mm2AutoCoinEnabled do
+                local c = LocalPlayer.Character
+                local h = c and c:FindFirstChild("HumanoidRootPart")
+                if not h then
+                    task.wait(0.3)
+                else
+                    local closest, closestDist, closestIndex = nil, math.huge, nil
+                    for i, coin in ipairs(coinCache) do
+                        if coin and coin.Parent then
+                            local d = (coin.Position - h.Position).Magnitude
+                            if d < closestDist then
+                                closest = coin
+                                closestDist = d
+                                closestIndex = i
+                            end
+                        end
+                    end
+
+                    if not closest then
+                        coinCache = findCoins()
+                        if #coinCache == 0 then
+                            task.wait(0.4)
+                        end
+                    else
+                        pcall(function()
+                            h.CFrame = CFrame.new(closest.Position + Vector3.new(0, 2, 0))
+                            h.AssemblyLinearVelocity = Vector3.zero
+                        end)
+
+                        local waited = 0
+                        while closest.Parent and waited < 0.7 and mm2AutoCoinEnabled do
+                            task.wait(0.05)
+                            waited = waited + 0.05
+                        end
+
+                        if not closest.Parent then
+                            collected = collected + 1
+                            table.remove(coinCache, closestIndex)
+                        else
+                            table.remove(coinCache, closestIndex)
+                        end
+
+                        if collected >= MM2_COIN_LIMIT then
+                            mm2AutoCoinEnabled = false
+                            local hh = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            if hh and mm2OriginalPos then
+                                pcall(function()
+                                    hh.CFrame = mm2OriginalPos
+                                    hh.AssemblyLinearVelocity = Vector3.zero
+                                end)
+                            end
+                            mm2OriginalPos = nil
+                            Rayfield:Notify({
+                                Title = "Bag Full",
+                                Content = "Collected " .. MM2_COIN_LIMIT .. " coins (bag limit reached). Returned to start.",
+                                Duration = 6,
+                                Image = "check-circle",
+                            })
+                            break
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    local function stopAutoCoin()
+        if mm2OriginalPos then
+            local c = LocalPlayer.Character
+            local h = c and c:FindFirstChild("HumanoidRootPart")
+            if h then
+                pcall(function()
+                    h.CFrame = mm2OriginalPos
+                    h.AssemblyLinearVelocity = Vector3.zero
+                end)
+            end
+            mm2OriginalPos = nil
+        end
+    end
+
+    local function findDroppedWeapons()
+        local weapons = {}
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") or obj:IsA("Model") then
+                local lname = string.lower(obj.Name)
+                local isGun = string.find(lname, "gun", 1, true) or string.find(lname, "revolver", 1, true)
+                local isKnife = string.find(lname, "knife", 1, true)
+                if isGun or isKnife then
+                    local inPlayer = false
+                    for _, p in ipairs(Players:GetPlayers()) do
+                        if p.Character and obj:IsDescendantOf(p.Character) then
+                            inPlayer = true
+                            break
+                        end
+                    end
+                    if not inPlayer then
+                        table.insert(weapons, {obj = obj, isKnife = isKnife})
+                    end
+                end
+            end
+        end
+        return weapons
+    end
+
+    local function clearWeaponEsp()
+        for obj, data in pairs(mm2WeaponEspData) do
+            if data.hl then pcall(function() data.hl:Destroy() end) end
+            if data.bb then pcall(function() data.bb:Destroy() end) end
+        end
+        table.clear(mm2WeaponEspData)
+    end
+
+    local function startWeaponEsp()
+        if mm2WeaponLoopActive then return end
+        mm2WeaponLoopActive = true
+        task.spawn(function()
+            while mm2WeaponEspEnabled do
+                local weapons = findDroppedWeapons()
+                local current = {}
+                for _, entry in ipairs(weapons) do
+                    local w = entry.obj
+                    current[w] = true
+                    if not mm2WeaponEspData[w] then
+                        local adornee = w:IsA("Model") and (w.PrimaryPart or w:FindFirstChildWhichIsA("BasePart")) or w
+                        if adornee then
+                            local hl = Instance.new("Highlight")
+                            hl.FillColor = entry.isKnife and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(60, 130, 255)
+                            hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                            hl.FillTransparency = 0.25
+                            hl.Parent = w
+
+                            local bb = Instance.new("BillboardGui")
+                            bb.Size = UDim2.new(0, 110, 0, 28)
+                            bb.StudsOffset = Vector3.new(0, 2.5, 0)
+                            bb.AlwaysOnTop = true
+                            bb.Adornee = adornee
+                            local lbl = Instance.new("TextLabel")
+                            lbl.Size = UDim2.new(1, 0, 1, 0)
+                            lbl.BackgroundTransparency = 1
+                            lbl.Text = entry.isKnife and "KNIFE DROP" or "GUN DROP"
+                            lbl.TextColor3 = entry.isKnife and Color3.fromRGB(255, 90, 90) or Color3.fromRGB(90, 160, 255)
+                            lbl.Font = Enum.Font.GothamBold
+                            lbl.TextSize = 14
+                            lbl.TextStrokeTransparency = 0
+                            lbl.Parent = bb
+                            bb.Parent = w
+
+                            mm2WeaponEspData[w] = {hl = hl, bb = bb}
+                        end
+                    end
+                end
+                for obj, data in pairs(mm2WeaponEspData) do
+                    if not current[obj] or not obj.Parent then
+                        if data.hl then pcall(function() data.hl:Destroy() end) end
+                        if data.bb then pcall(function() data.bb:Destroy() end) end
+                        mm2WeaponEspData[obj] = nil
+                    end
+                end
+                task.wait(0.4)
+            end
+            mm2WeaponLoopActive = false
+            clearWeaponEsp()
+        end)
+    end
+
+    local function startDeathAlerts()
+        if mm2DeathLoopActive then return end
+        mm2DeathLoopActive = true
+        task.spawn(function()
+            while mm2DeathAlertEnabled do
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer then
+                        local role = getPlayerRole(player)
+                        if role ~= "Innocent" then
+                            local char = player.Character
+                            local hum = char and char:FindFirstChildOfClass("Humanoid")
+                            if hum then
+                                local tracked = mm2TrackedRoles[player]
+                                if not tracked or tracked.role ~= role or tracked.hum ~= hum then
+                                    if tracked and tracked.conn then
+                                        pcall(function() tracked.conn:Disconnect() end)
+                                    end
+                                    local capturedRole = role
+                                    local capturedName = player.Name
+                                    local conn = hum.Died:Connect(function()
+                                        if mm2DeathAlertEnabled then
+                                            Rayfield:Notify({
+                                                Title = capturedRole .. " DIED!",
+                                                Content = capturedName .. " (" .. capturedRole .. ") was eliminated. Check the dropped weapon!",
+                                                Duration = 7,
+                                                Image = capturedRole == "Murderer" and "shield-check" or "alert-triangle",
+                                            })
+                                        end
+                                    end)
+                                    mm2TrackedRoles[player] = {role = role, hum = hum, conn = conn}
+                                end
+                            end
+                        end
+                    end
+                end
+                task.wait(1)
+            end
+            mm2DeathLoopActive = false
+            for player, tracked in pairs(mm2TrackedRoles) do
+                if tracked.conn then pcall(function() tracked.conn:Disconnect() end) end
+            end
+            table.clear(mm2TrackedRoles)
+        end)
+    end
+
+    Mm2Tab:CreateSection("Role ESP")
+
+    Mm2Tab:CreateToggle({
+        Name = "Role ESP (Murderer / Sheriff / Innocent)",
+        CurrentValue = false,
+        Callback = function(Value)
+            mm2EspEnabled = Value
+            if Value then
+                startMm2Esp()
+                Rayfield:Notify({
+                    Title = "MM2 ESP ON",
+                    Content = "Red = Murderer | Blue = Sheriff | Gray = Innocent",
+                    Duration = 5,
+                    Image = "eye",
+                })
+            else
+                stopMm2Esp()
+            end
+        end,
+    })
+
+    Mm2Tab:CreateButton({
+        Name = "Identify Murderer Now",
+        Callback = function()
+            local murderer = nil
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and getPlayerRole(p) == "Murderer" then
+                    murderer = p
+                    break
+                end
+            end
+            if murderer then
+                Rayfield:Notify({
+                    Title = "Murderer Found",
+                    Content = murderer.Name .. " has the knife!",
+                    Duration = 6,
+                    Image = "alert-triangle",
+                })
+            else
+                Rayfield:Notify({
+                    Title = "No Murderer",
+                    Content = "Knife not in any player's inventory right now.",
+                    Duration = 4,
+                    Image = "info",
+                })
+            end
+        end,
+    })
+
+    Mm2Tab:CreateButton({
+        Name = "Identify Sheriff Now",
+        Callback = function()
+            local sheriff = nil
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and getPlayerRole(p) == "Sheriff" then
+                    sheriff = p
+                    break
+                end
+            end
+            if sheriff then
+                Rayfield:Notify({
+                    Title = "Sheriff Found",
+                    Content = sheriff.Name .. " has the gun!",
+                    Duration = 6,
+                    Image = "shield",
+                })
+            else
+                Rayfield:Notify({
+                    Title = "No Sheriff",
+                    Content = "Gun not in any player's inventory right now.",
+                    Duration = 4,
+                    Image = "info",
+                })
+            end
+        end,
+    })
+
+    Mm2Tab:CreateToggle({
+        Name = "Dropped Weapon ESP (Gun / Knife)",
+        CurrentValue = false,
+        Callback = function(Value)
+            mm2WeaponEspEnabled = Value
+            if Value then
+                startWeaponEsp()
+                Rayfield:Notify({
+                    Title = "Weapon ESP ON",
+                    Content = "Dropped gun (blue) and knife (red) are now highlighted.",
+                    Duration = 5,
+                    Image = "crosshair",
+                })
+            else
+                clearWeaponEsp()
+            end
+        end,
+    })
+
+    Mm2Tab:CreateToggle({
+        Name = "Role Death Alerts (Sheriff / Murderer)",
+        CurrentValue = false,
+        Callback = function(Value)
+            mm2DeathAlertEnabled = Value
+            if Value then
+                startDeathAlerts()
+                Rayfield:Notify({
+                    Title = "Death Alerts ON",
+                    Content = "You'll be notified when the Sheriff or Murderer dies.",
+                    Duration = 5,
+                    Image = "bell",
+                })
+            end
+        end,
+    })
+
+    Mm2Tab:CreateSection("Auto Farm")
+
+    Mm2Tab:CreateToggle({
+        Name = "Auto Collect Coins",
+        CurrentValue = false,
+        Callback = function(Value)
+            mm2AutoCoinEnabled = Value
+            if Value then
+                startAutoCoin()
+                Rayfield:Notify({
+                    Title = "Auto Coin ON",
+                    Content = "Teleporting to closest coins. Toggle off to return.",
+                    Duration = 4,
+                    Image = "coins",
+                })
+            else
+                stopAutoCoin()
+            end
+        end,
+    })
+
+    Mm2Tab:CreateButton({
+        Name = "Show Coin Count",
+        Callback = function()
+            local count = #findCoins()
+            Rayfield:Notify({
+                Title = "Coins in Map",
+                Content = count .. " coin(s) currently active.",
+                Duration = 4,
+                Image = "coins",
+            })
+        end,
+    })
+end
+
+if SkeTab then
+    local skeFarmEnabled = false
+    local skeWalkDir = nil
+    local skeFlip = false
+    local skeFlipTimer = 0
+
+    local function skeFindParts(keywords)
+        local found = {}
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                local lname = string.lower(obj.Name)
+                for _, kw in ipairs(keywords) do
+                    if string.find(lname, kw, 1, true) then
+                        table.insert(found, obj)
+                        break
+                    end
+                end
+            end
+        end
+        return found
+    end
+
+    local function skeTeleportTo(keywords, label)
+        local targets = skeFindParts(keywords)
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if #targets == 0 then
+            Rayfield:Notify({
+                Title = "Not Found",
+                Content = "No '" .. label .. "' object found. Use 'Scan Stage Objects' to see real names.",
+                Duration = 6,
+                Image = "alert-triangle",
+            })
+            return
+        end
+        local farthest, farDist = nil, -1
+        for _, t in ipairs(targets) do
+            local d = (t.Position - hrp.Position).Magnitude
+            if d > farDist then
+                farthest = t
+                farDist = d
+            end
+        end
+        if farthest then
+            local rot = hrp.CFrame - hrp.CFrame.Position
+            hrp.CFrame = CFrame.new(farthest.Position + Vector3.new(0, 4, 0)) * rot
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            Rayfield:Notify({
+                Title = "Teleported",
+                Content = "Moved to '" .. farthest.Name .. "'.",
+                Duration = 4,
+                Image = "check-circle",
+            })
+        end
+    end
+
+    SkeTab:CreateSection("Speed Farm")
+
+    SkeTab:CreateToggle({
+        Name = "Auto Step Farm (Walks Back & Forth)",
+        CurrentValue = false,
+        Callback = function(Value)
+            skeFarmEnabled = Value
+            if Value then
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local look = hrp.CFrame.LookVector
+                    skeWalkDir = Vector3.new(look.X, 0, look.Z)
+                    if skeWalkDir.Magnitude > 0.001 then
+                        skeWalkDir = skeWalkDir.Unit
+                    else
+                        skeWalkDir = Vector3.new(1, 0, 0)
+                    end
+                end
+                skeFlip = false
+                skeFlipTimer = 0
+
+                pcall(function()
+                    RunService:UnbindFromRenderStep("SkeStepFarm")
+                end)
+                pcall(function()
+                    RunService:BindToRenderStep("SkeStepFarm", Enum.RenderPriority.Character.Value + 1, function(dt)
+                        if not skeFarmEnabled then return end
+                        local c = LocalPlayer.Character
+                        local hum = c and c:FindFirstChildOfClass("Humanoid")
+                        if not hum or hum.Health <= 0 or not skeWalkDir then return end
+
+                        skeFlipTimer = skeFlipTimer + dt
+                        if skeFlipTimer >= 0.7 then
+                            skeFlipTimer = 0
+                            skeFlip = not skeFlip
+                        end
+
+                        local dir = skeFlip and (skeWalkDir * -1) or skeWalkDir
+                        pcall(function()
+                            hum:Move(dir, false)
+                        end)
+                    end)
+                end)
+
+                Rayfield:Notify({
+                    Title = "Auto Step Farm ON",
+                    Content = "Walking back and forth to rack up steps. Stand on a key row first.",
+                    Duration = 5,
+                    Image = "zap",
+                })
+            else
+                pcall(function()
+                    RunService:UnbindFromRenderStep("SkeStepFarm")
+                end)
+                local c = LocalPlayer.Character
+                local hum = c and c:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    pcall(function() hum:Move(Vector3.zero, false) end)
+                end
+            end
+        end,
+    })
+
+    SkeTab:CreateSection("Teleports")
+
+    SkeTab:CreateButton({
+        Name = "Teleport to Finish / End",
+        Callback = function()
+            skeTeleportTo({"finish", "end", "goal", "win", "exit"}, "finish")
+        end,
+    })
+
+    SkeTab:CreateButton({
+        Name = "Teleport to Trophy",
+        Callback = function()
+            skeTeleportTo({"trophy", "reward", "chest", "crown"}, "trophy")
+        end,
+    })
+
+    SkeTab:CreateButton({
+        Name = "Teleport to Checkpoint",
+        Callback = function()
+            skeTeleportTo({"checkpoint", "stage", "flag", "spawn"}, "checkpoint")
+        end,
+    })
+
+    SkeTab:CreateButton({
+        Name = "Stand on Treadmill",
+        Callback = function()
+            skeTeleportTo({"treadmill", "tread", "conveyor", "belt"}, "treadmill")
+        end,
+    })
+
+    SkeTab:CreateSection("Diagnostics")
+
+    SkeTab:CreateButton({
+        Name = "Scan Stage Objects (Find Real Names)",
+        Callback = function()
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            local seen = {}
+            local list = {}
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if (obj:IsA("BasePart") or obj:IsA("Model")) then
+                    local d = (obj:IsA("BasePart") and (obj.Position - hrp.Position).Magnitude) or 0
+                    local lname = string.lower(obj.Name)
+                    local interesting = string.find(lname, "win", 1, true) or string.find(lname, "trophy", 1, true)
+                        or string.find(lname, "finish", 1, true) or string.find(lname, "check", 1, true)
+                        or string.find(lname, "stage", 1, true) or string.find(lname, "tread", 1, true)
+                        or string.find(lname, "goal", 1, true) or string.find(lname, "end", 1, true)
+                    if interesting and not seen[obj.Name] then
+                        seen[obj.Name] = true
+                        table.insert(list, obj.Name)
+                    end
+                end
+            end
+            local content
+            if #list == 0 then
+                content = "No obvious named targets found. Tell me a target's exact name from the dev console and I'll map it."
+            else
+                content = "Found: " .. table.concat(list, ", ")
+            end
+            Rayfield:Notify({
+                Title = "Stage Objects",
+                Content = content,
+                Duration = 10,
+                Image = "search",
+            })
+        end,
+    })
+end
+
+if KlbTab then
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    local klbAutoKick = false
+    local klbAutoIncome = false
+    local klbAutoRebirth = false
+    local klbAutoFree = false
+
+    local function fireRemote(name, ...)
+        local args = {...}
+        local r = ReplicatedStorage:FindFirstChild(name, true)
+        if r then
+            if r:IsA("RemoteEvent") then
+                pcall(function() r:FireServer(table.unpack(args)) end)
+                return true
+            elseif r:IsA("RemoteFunction") then
+                pcall(function() r:InvokeServer(table.unpack(args)) end)
+                return true
+            end
+        end
+        return false
+    end
+
+    local function klbGetBasePart()
+        local plots = Workspace:FindFirstChild("Plots")
+        if not plots then return nil end
+        local mine = nil
+        for _, plot in ipairs(plots:GetChildren()) do
+            local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("Player") or plot:FindFirstChild("OwnerName")
+            if owner then
+                if (owner:IsA("ObjectValue") and owner.Value == LocalPlayer)
+                    or (owner:IsA("StringValue") and owner.Value == LocalPlayer.Name) then
+                    mine = plot
+                    break
+                end
+            end
+            if string.find(plot.Name, LocalPlayer.Name, 1, true) then
+                mine = plot
+                break
+            end
+        end
+        if not mine then return nil end
+        local spawn = mine:FindFirstChild("Spawn", true) or mine:FindFirstChild("Pad", true)
+            or mine:FindFirstChild("Base", true)
+        if spawn and spawn:IsA("BasePart") then return spawn end
+        if mine:IsA("Model") and mine.PrimaryPart then return mine.PrimaryPart end
+        return mine:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    local function klbTeleportToBase()
+        local base = klbGetBasePart()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return false end
+        if not base then
+            return false
+        end
+        local rot = hrp.CFrame - hrp.CFrame.Position
+        hrp.CFrame = CFrame.new(base.Position + Vector3.new(0, 4, 0)) * rot
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        return true
+    end
+
+    local function klbTeleportToBlock()
+        local block = Workspace:FindFirstChild("BlockPart", true)
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp or not block then return false end
+        local bpos = (block:IsA("BasePart") and block.Position) or (block:IsA("Model") and block:GetPivot().Position)
+        if not bpos then return false end
+        local rot = hrp.CFrame - hrp.CFrame.Position
+        hrp.CFrame = CFrame.new(bpos + Vector3.new(0, 4, 0)) * rot
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        return true
+    end
+
+    KlbTab:CreateSection("Movement")
+
+    KlbTab:CreateButton({
+        Name = "Teleport to My Base / Safe Zone",
+        Callback = function()
+            local ok = klbTeleportToBase()
+            Rayfield:Notify({
+                Title = ok and "Teleported" or "Base Not Found",
+                Content = ok and "Moved to your safe zone." or "Couldn't find your plot. Tell me a Plots child name and I'll map it.",
+                Duration = 5,
+                Image = ok and "check-circle" or "alert-triangle",
+            })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Teleport to Lucky Block (Kick Zone)",
+        Callback = function()
+            local ok = klbTeleportToBlock()
+            Rayfield:Notify({
+                Title = ok and "Teleported" or "Block Not Found",
+                Content = ok and "Moved to the kick block." or "BlockPart not found right now.",
+                Duration = 4,
+                Image = ok and "check-circle" or "alert-triangle",
+            })
+        end,
+    })
+
+    KlbTab:CreateSection("Auto Farm")
+
+    KlbTab:CreateToggle({
+        Name = "Auto Kick + Collect + Return",
+        CurrentValue = false,
+        Callback = function(Value)
+            klbAutoKick = Value
+            if Value then
+                task.spawn(function()
+                    while klbAutoKick do
+                        klbTeleportToBlock()
+                        task.wait(0.15)
+                        fireRemote("rev_KickEvent")
+                        task.wait(0.1)
+                        fireRemote("rev_ForceKickBar")
+                        task.wait(0.1)
+                        fireRemote("rev_KickEventEnded")
+                        task.wait(0.1)
+                        fireRemote("rev_KickCollect")
+                        task.wait(0.2)
+                        klbTeleportToBase()
+                        task.wait(0.15)
+                        fireRemote("rev_B_Collect")
+                        fireRemote("rev_Collected")
+                        task.wait(0.5)
+                    end
+                end)
+                Rayfield:Notify({
+                    Title = "Auto Kick ON",
+                    Content = "Kick > perfect bar > collect > return to base loop running.",
+                    Duration = 5,
+                    Image = "zap",
+                })
+            end
+        end,
+    })
+
+    KlbTab:CreateToggle({
+        Name = "Auto Collect Income (Base Money)",
+        CurrentValue = false,
+        Callback = function(Value)
+            klbAutoIncome = Value
+            if Value then
+                task.spawn(function()
+                    while klbAutoIncome do
+                        fireRemote("rev_B_Collect")
+                        fireRemote("rev_Collected")
+                        task.wait(2)
+                    end
+                end)
+                Rayfield:Notify({
+                    Title = "Auto Income ON",
+                    Content = "Collecting base income every 2s.",
+                    Duration = 4,
+                    Image = "dollar-sign",
+                })
+            end
+        end,
+    })
+
+    KlbTab:CreateToggle({
+        Name = "Auto Claim Free / Offline Rewards",
+        CurrentValue = false,
+        Callback = function(Value)
+            klbAutoFree = Value
+            if Value then
+                task.spawn(function()
+                    while klbAutoFree do
+                        fireRemote("rev_ClaimFree")
+                        fireRemote("rev_Offline_Claim")
+                        task.wait(10)
+                    end
+                end)
+                Rayfield:Notify({
+                    Title = "Auto Claim ON",
+                    Content = "Claiming free and offline rewards periodically.",
+                    Duration = 4,
+                    Image = "gift",
+                })
+            end
+        end,
+    })
+
+    KlbTab:CreateSection("Rebirth & Upgrades")
+
+    KlbTab:CreateButton({
+        Name = "Rebirth Now",
+        Callback = function()
+            local ok = fireRemote("rev_RebirthRequest")
+            Rayfield:Notify({
+                Title = ok and "Rebirth Requested" or "Remote Missing",
+                Content = ok and "Sent rebirth request to server." or "rev_RebirthRequest not found.",
+                Duration = 4,
+                Image = ok and "rotate-ccw" or "x-circle",
+            })
+        end,
+    })
+
+    KlbTab:CreateToggle({
+        Name = "Auto Rebirth (Spam Request)",
+        CurrentValue = false,
+        Callback = function(Value)
+            klbAutoRebirth = Value
+            if Value then
+                task.spawn(function()
+                    while klbAutoRebirth do
+                        fireRemote("rev_RebirthRequest")
+                        task.wait(3)
+                    end
+                end)
+                Rayfield:Notify({
+                    Title = "Auto Rebirth ON",
+                    Content = "Sending rebirth request every 3s (fires when you qualify).",
+                    Duration = 5,
+                    Image = "rotate-ccw",
+                })
+            end
+        end,
+    })
+
+    local function fireRemoteTimes(name, times)
+        local any = false
+        for i = 1, times do
+            if fireRemote(name) then any = true end
+            task.wait(0.06)
+        end
+        return any
+    end
+
+    KlbTab:CreateButton({
+        Name = "Buy Speed  x1",
+        Callback = function()
+            local ok = fireRemote("rev_SPEED_UPGRADE")
+            Rayfield:Notify({ Title = ok and "Speed x1" or "Remote Missing", Content = ok and "Bought 1 speed upgrade." or "rev_SPEED_UPGRADE not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Buy Speed  x3",
+        Callback = function()
+            local ok = fireRemoteTimes("rev_SPEED_UPGRADE", 3)
+            Rayfield:Notify({ Title = ok and "Speed x3" or "Remote Missing", Content = ok and "Bought 3 speed upgrades." or "rev_SPEED_UPGRADE not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Buy Speed  x10",
+        Callback = function()
+            local ok = fireRemoteTimes("rev_SPEED_UPGRADE", 10)
+            Rayfield:Notify({ Title = ok and "Speed x10" or "Remote Missing", Content = ok and "Bought 10 speed upgrades." or "rev_SPEED_UPGRADE not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Buy Weight  x1",
+        Callback = function()
+            local ok = fireRemote("rev_Weight_Update")
+            Rayfield:Notify({ Title = ok and "Weight x1" or "Remote Missing", Content = ok and "Bought 1 weight upgrade." or "rev_Weight_Update not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Buy Weight  x3",
+        Callback = function()
+            local ok = fireRemoteTimes("rev_Weight_Update", 3)
+            Rayfield:Notify({ Title = ok and "Weight x3" or "Remote Missing", Content = ok and "Bought 3 weight upgrades." or "rev_Weight_Update not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Buy Weight  x10",
+        Callback = function()
+            local ok = fireRemoteTimes("rev_Weight_Update", 10)
+            Rayfield:Notify({ Title = ok and "Weight x10" or "Remote Missing", Content = ok and "Bought 10 weight upgrades." or "rev_Weight_Update not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Upgrade Brainrots",
+        Callback = function()
+            local ok = fireRemote("rev_B_Upgrade")
+            Rayfield:Notify({
+                Title = ok and "Brainrot Upgrade Sent" or "Remote Missing",
+                Content = ok and "Requested a brainrot upgrade." or "rev_B_Upgrade not found.",
+                Duration = 4,
+                Image = ok and "check-circle" or "x-circle",
+            })
+        end,
+    })
+
+    KlbTab:CreateSection("Diagnostics (Read First)")
+
+    KlbTab:CreateButton({
+        Name = "Scan Remotes (Kick / Rebirth / Upgrade)",
+        Callback = function()
+            local names = {}
+            local seen = {}
+            local function scan(container)
+                for _, obj in ipairs(container:GetDescendants()) do
+                    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                        if not seen[obj.Name] then
+                            seen[obj.Name] = true
+                            table.insert(names, obj.Name)
+                        end
+                    end
+                end
+            end
+            pcall(function() scan(ReplicatedStorage) end)
+            local content = (#names == 0) and "No remotes found in ReplicatedStorage." or ("Remotes: " .. table.concat(names, ", "))
+            Rayfield:Notify({ Title = "All Remotes", Content = content, Duration = 12, Image = "radio" })
+            print("[DeltaProHub] KLB Remotes:", table.concat(names, ", "))
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Scan My Plot (Fix Base Teleport)",
+        Callback = function()
+            local plots = Workspace:FindFirstChild("Plots")
+            if not plots then
+                Rayfield:Notify({ Title = "No Plots Folder", Content = "Workspace has no 'Plots'. Tell me what holds the bases.", Duration = 6, Image = "alert-triangle" })
+                return
+            end
+            local lines = {}
+            for _, plot in ipairs(plots:GetChildren()) do
+                local info = plot.Name
+                for _, v in ipairs(plot:GetChildren()) do
+                    if v:IsA("StringValue") or v:IsA("ObjectValue") or v:IsA("IntValue") then
+                        local val = (v:IsA("ObjectValue") and v.Value and v.Value.Name) or tostring(v.Value)
+                        info = info .. " | " .. v.Name .. "=" .. tostring(val)
+                    end
+                end
+                table.insert(lines, info)
+                print("[DeltaProHub] Plot:", info)
+            end
+            Rayfield:Notify({
+                Title = "Plots (" .. #plots:GetChildren() .. ")",
+                Content = "Printed full details to console. First: " .. (lines[1] or "none"),
+                Duration = 12,
+                Image = "search",
+            })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Scan On-Screen Buttons (Find 2x Button)",
+        Callback = function()
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            if not pg then return end
+            local found = {}
+            for _, obj in ipairs(pg:GetDescendants()) do
+                if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+                    if obj.Visible then
+                        local txt = (obj:IsA("TextButton") and obj.Text ~= "" and (" '" .. obj.Text .. "'")) or ""
+                        local entry = obj.Name .. txt
+                        table.insert(found, entry)
+                        print("[DeltaProHub] Button:", obj:GetFullName(), txt)
+                    end
+                end
+            end
+            local content = (#found == 0) and "No visible buttons found." or ("Visible buttons printed to console. Count: " .. #found)
+            Rayfield:Notify({ Title = "On-Screen Buttons", Content = content, Duration = 10, Image = "mouse-pointer" })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Scan Shop Items (Find Buyables)",
+        Callback = function()
+            local out = {}
+            local function dump(folderName)
+                local f = Workspace:FindFirstChild(folderName)
+                if f then
+                    for _, c in ipairs(f:GetDescendants()) do
+                        if c:IsA("BasePart") or c:IsA("Model") or c:IsA("ProximityPrompt") then
+                            print("[DeltaProHub] " .. folderName .. ":", c:GetFullName())
+                            table.insert(out, c.Name)
+                        end
+                    end
+                end
+            end
+            dump("Shops")
+            dump("VolcanicShop")
+            local content = (#out == 0) and "Nothing under Shops/VolcanicShop." or ("Shop contents printed to console. Items: " .. #out)
+            Rayfield:Notify({ Title = "Shop Scan", Content = content, Duration = 10, Image = "shopping-cart" })
+        end,
+    })
+end
+
+Rayfield:Notify({
+    Title = "Hub Ready",
+    Content = "Kick a Lucky Block support added (scan remotes to finish setup).",
+    Duration = 5,
+    Image = "check-circle",
+})
