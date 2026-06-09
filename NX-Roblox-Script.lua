@@ -1,18 +1,16 @@
 --[[
-    Ultimate Advanced Open Source Roblox Script Hub
-    - God Mode v2: HealthChanged + Dead state engellenir, kill brick'lere karsi dayanikli
-    - Anti-Void: Karakter asagi duserse otomatik kurtarma
-    - Click Teleport: PC (T tusu / sag tik) + Mobile (tap)
-    - HUD: FPS, Ping, KeyStrokes overlay (mobil joystick destekli)
-    - Upside-Down Camera: Eglenceli gorsel efekt
-    - Fly, Aimbot, Teleport V2, Wave Remover (mevcut)
-    - Yeni: Anti-AFK, Fullbright, FOV Slider, Server Hop
+    NX Roblox Script - Open-Source Multi-Game Utility Hub
+    Maintained by NX-developer (Novatex)
 
-    Credits / Thanks:
-    - Kick a Lucky Block automation logic inspired by the open-source
-      community (Gumanba - github.com/gumanba/Scripts, and "Sloppy GUI").
-      No code was copied; their public work helped map out the mechanics.
-    - UI library: Rayfield by Sirius Software.
+    Universal: God Mode, God Position, Anti-Void, Fly (camera-direction, PC + mobile),
+    NoClip, Wave Remover, Anti-AFK, movement tools (speed/jump locks, auto walk/jump/spin,
+    bhop), visuals (ESP, Fullbright, FOV, upside-down cam, draggable FPS/Ping/KeyStrokes HUD),
+    combat (aimbot, hitbox, camera lock), Teleport V2 (saved slots + player list), misc utilities.
+
+    Game-specific tabs appear only when you are inside the matching game.
+
+    License: Apache License 2.0 (see LICENSE).
+    Credits: UI built with the Rayfield library by Sirius Software, used under its own license.
 ]]
 
 local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
@@ -59,6 +57,41 @@ local function copyToClipboard(text)
         if ok then return true end
     end
     return false
+end
+
+local function guiButton(...)
+    local node = LocalPlayer:FindFirstChild("PlayerGui")
+    for _, part in ipairs({...}) do
+        if not node then return nil end
+        node = node:FindFirstChild(part)
+    end
+    return node
+end
+
+local function clickGuiButton(btn)
+    if type(btn) == "function" then btn = btn() end
+    if not btn then return false end
+    local fired = false
+    if getconnections then
+        for _, sigName in ipairs({"MouseButton1Click", "Activated", "MouseButton1Down", "MouseButton1Up"}) do
+            local ok, conns = pcall(function() return getconnections(btn[sigName]) end)
+            if ok and conns then
+                for _, c in ipairs(conns) do
+                    pcall(function()
+                        if c.Function then c.Function()
+                        elseif c.Fire then c:Fire() end
+                    end)
+                    fired = true
+                end
+            end
+        end
+    end
+    if not fired and firesignal then
+        pcall(function() firesignal(btn.MouseButton1Click) end)
+        pcall(function() firesignal(btn.Activated) end)
+        fired = true
+    end
+    return fired
 end
 
 local flyConnection, noclipConnection, espActive, espPlayerData = nil, nil, false, {}
@@ -2998,6 +3031,7 @@ if KlbTab then
     local klbAutoIncome = false
     local klbAutoRebirth = false
     local klbAutoFree = false
+    local klbAutoBonus = false
 
     local function fireRemote(name, ...)
         local args = {...}
@@ -3019,22 +3053,36 @@ if KlbTab then
         if not plots then return nil end
         local mine = nil
         for _, plot in ipairs(plots:GetChildren()) do
-            local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("Player") or plot:FindFirstChild("OwnerName")
-            if owner then
-                if (owner:IsA("ObjectValue") and owner.Value == LocalPlayer)
-                    or (owner:IsA("StringValue") and owner.Value == LocalPlayer.Name) then
-                    mine = plot
-                    break
+            local attrOwner = plot:GetAttribute("Owner") or plot:GetAttribute("OwnerName") or plot:GetAttribute("Player")
+            if attrOwner and tostring(attrOwner) == LocalPlayer.Name then mine = plot break end
+            local ov = plot:FindFirstChild("Owner", true) or plot:FindFirstChild("Player", true)
+            if ov and ((ov:IsA("ObjectValue") and ov.Value == LocalPlayer) or (ov:IsA("StringValue") and ov.Value == LocalPlayer.Name)) then
+                mine = plot break
+            end
+            for _, d in ipairs(plot:GetDescendants()) do
+                if d:IsA("TextLabel") and d.Text and string.find(d.Text, LocalPlayer.Name, 1, true) then
+                    mine = plot break
                 end
             end
-            if string.find(plot.Name, LocalPlayer.Name, 1, true) then
-                mine = plot
-                break
+            if mine then break end
+        end
+        if not mine then
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local best, bd = nil, math.huge
+                for _, plot in ipairs(plots:GetChildren()) do
+                    local ok, pivot = pcall(function() return plot:GetPivot().Position end)
+                    if ok then
+                        local d = (pivot - hrp.Position).Magnitude
+                        if d < bd then best, bd = plot, d end
+                    end
+                end
+                mine = best
             end
         end
         if not mine then return nil end
         local spawn = mine:FindFirstChild("Spawn", true) or mine:FindFirstChild("Pad", true)
-            or mine:FindFirstChild("Base", true)
+            or mine:FindFirstChild("SpawnLocation", true) or mine:FindFirstChild("Base", true)
         if spawn and spawn:IsA("BasePart") then return spawn end
         if mine:IsA("Model") and mine.PrimaryPart then return mine.PrimaryPart end
         return mine:FindFirstChildWhichIsA("BasePart", true)
@@ -3107,26 +3155,48 @@ if KlbTab then
                     while klbAutoKick do
                         klbTeleportToBlock()
                         task.wait(0.15)
+                        fireRemote("rev_ForceKickBar")
+                        task.wait(0.05)
+                        clickGuiButton(guiButton("HUD", "KickButton"))
+                        task.wait(0.1)
                         fireRemote("rev_KickEvent")
                         task.wait(0.1)
-                        fireRemote("rev_ForceKickBar")
-                        task.wait(0.1)
-                        fireRemote("rev_KickEventEnded")
-                        task.wait(0.1)
                         fireRemote("rev_KickCollect")
+                        fireRemote("rev_Collected")
                         task.wait(0.2)
                         klbTeleportToBase()
                         task.wait(0.15)
                         fireRemote("rev_B_Collect")
-                        fireRemote("rev_Collected")
-                        task.wait(0.5)
+                        task.wait(0.45)
                     end
                 end)
                 Rayfield:Notify({
                     Title = "Auto Kick ON",
-                    Content = "Kick > perfect bar > collect > return to base loop running.",
+                    Content = "Perfect bar > kick button > collect > return to base loop.",
                     Duration = 5,
                     Image = "zap",
+                })
+            end
+        end,
+    })
+
+    KlbTab:CreateToggle({
+        Name = "Auto Weight Bonus (Purple 2x)",
+        CurrentValue = false,
+        Callback = function(Value)
+            klbAutoBonus = Value
+            if Value then
+                task.spawn(function()
+                    while klbAutoBonus do
+                        fireRemote("rev_WeightBonus")
+                        task.wait(0.4)
+                    end
+                end)
+                Rayfield:Notify({
+                    Title = "Weight Bonus ON",
+                    Content = "Auto-firing the 2x training bonus.",
+                    Duration = 4,
+                    Image = "trending-up",
                 })
             end
         end,
@@ -3183,92 +3253,99 @@ if KlbTab then
     KlbTab:CreateButton({
         Name = "Rebirth Now",
         Callback = function()
-            local ok = fireRemote("rev_RebirthRequest")
+            local clicked = clickGuiButton(guiButton("Frames", "Rebirth", "Rebirth"))
+            fireRemote("rev_RebirthRequest")
             Rayfield:Notify({
-                Title = ok and "Rebirth Requested" or "Remote Missing",
-                Content = ok and "Sent rebirth request to server." or "rev_RebirthRequest not found.",
+                Title = "Rebirth Sent",
+                Content = clicked and "Clicked rebirth button." or "Fired rebirth remote (open the Rebirth frame if it fails).",
                 Duration = 4,
-                Image = ok and "rotate-ccw" or "x-circle",
+                Image = "rotate-ccw",
             })
         end,
     })
 
     KlbTab:CreateToggle({
-        Name = "Auto Rebirth (Spam Request)",
+        Name = "Auto Rebirth",
         CurrentValue = false,
         Callback = function(Value)
             klbAutoRebirth = Value
             if Value then
                 task.spawn(function()
                     while klbAutoRebirth do
+                        clickGuiButton(guiButton("Frames", "Rebirth", "Rebirth"))
                         fireRemote("rev_RebirthRequest")
                         task.wait(3)
                     end
                 end)
-                Rayfield:Notify({
-                    Title = "Auto Rebirth ON",
-                    Content = "Sending rebirth request every 3s (fires when you qualify).",
-                    Duration = 5,
-                    Image = "rotate-ccw",
-                })
+                Rayfield:Notify({ Title = "Auto Rebirth ON", Content = "Triggering rebirth every 3s when you qualify.", Duration = 5, Image = "rotate-ccw" })
             end
         end,
     })
 
-    local function fireRemoteTimes(name, times)
-        local any = false
-        for i = 1, times do
-            if fireRemote(name) then any = true end
-            task.wait(0.06)
-        end
-        return any
-    end
-
     KlbTab:CreateButton({
         Name = "Buy Speed  x1",
         Callback = function()
-            local ok = fireRemote("rev_SPEED_UPGRADE")
-            Rayfield:Notify({ Title = ok and "Speed x1" or "Remote Missing", Content = ok and "Bought 1 speed upgrade." or "rev_SPEED_UPGRADE not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+            local ok = clickGuiButton(guiButton("Frames", "SpeedUpgrades", "ScrollingFrame", "+1 Speed", "ButtonsFrame", "One"))
+            Rayfield:Notify({ Title = ok and "Speed x1" or "Open Speed Menu", Content = ok and "Bought single speed." or "Open the Speed Upgrades menu once first.", Duration = 3, Image = ok and "check-circle" or "alert-triangle" })
         end,
     })
 
     KlbTab:CreateButton({
-        Name = "Buy Speed  x3",
+        Name = "Buy Speed  x3 (Triple)",
         Callback = function()
-            local ok = fireRemoteTimes("rev_SPEED_UPGRADE", 3)
-            Rayfield:Notify({ Title = ok and "Speed x3" or "Remote Missing", Content = ok and "Bought 3 speed upgrades." or "rev_SPEED_UPGRADE not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+            local ok = clickGuiButton(guiButton("Frames", "SpeedUpgrades", "ScrollingFrame", "+1 Speed", "ButtonsFrame", "Two"))
+            Rayfield:Notify({ Title = ok and "Speed x3" or "Open Speed Menu", Content = ok and "Bought triple speed." or "Open the Speed Upgrades menu once first.", Duration = 3, Image = ok and "check-circle" or "alert-triangle" })
         end,
     })
 
     KlbTab:CreateButton({
         Name = "Buy Speed  x10",
         Callback = function()
-            local ok = fireRemoteTimes("rev_SPEED_UPGRADE", 10)
-            Rayfield:Notify({ Title = ok and "Speed x10" or "Remote Missing", Content = ok and "Bought 10 speed upgrades." or "rev_SPEED_UPGRADE not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+            local ok = clickGuiButton(guiButton("Frames", "SpeedUpgrades", "ScrollingFrame", "+1 Speed", "ButtonsFrame", "Three"))
+            Rayfield:Notify({ Title = ok and "Speed x10" or "Open Speed Menu", Content = ok and "Bought x10 speed." or "Open the Speed Upgrades menu once first.", Duration = 3, Image = ok and "check-circle" or "alert-triangle" })
         end,
     })
 
     KlbTab:CreateButton({
-        Name = "Buy Weight  x1",
+        Name = "Buy Kick Power  +1",
         Callback = function()
-            local ok = fireRemote("rev_Weight_Update")
-            Rayfield:Notify({ Title = ok and "Weight x1" or "Remote Missing", Content = ok and "Bought 1 weight upgrade." or "rev_Weight_Update not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+            local ok = clickGuiButton(guiButton("Frames", "KickUpgrades", "ScrollingFrame", "+1 Kick", "Button"))
+            Rayfield:Notify({ Title = ok and "Kick +1" or "Open Kick Menu", Content = ok and "Bought +1 kick power." or "Open the Kick Upgrades menu once first.", Duration = 3, Image = ok and "check-circle" or "alert-triangle" })
         end,
     })
 
     KlbTab:CreateButton({
-        Name = "Buy Weight  x3",
+        Name = "Buy Kick Power  +5",
         Callback = function()
-            local ok = fireRemoteTimes("rev_Weight_Update", 3)
-            Rayfield:Notify({ Title = ok and "Weight x3" or "Remote Missing", Content = ok and "Bought 3 weight upgrades." or "rev_Weight_Update not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+            local ok = clickGuiButton(guiButton("Frames", "KickUpgrades", "ScrollingFrame", "+5 Kick", "Button"))
+            Rayfield:Notify({ Title = ok and "Kick +5" or "Open Kick Menu", Content = ok and "Bought +5 kick power." or "Open the Kick Upgrades menu once first.", Duration = 3, Image = ok and "check-circle" or "alert-triangle" })
         end,
     })
 
     KlbTab:CreateButton({
-        Name = "Buy Weight  x10",
+        Name = "Buy Kick Power  +10",
         Callback = function()
-            local ok = fireRemoteTimes("rev_Weight_Update", 10)
-            Rayfield:Notify({ Title = ok and "Weight x10" or "Remote Missing", Content = ok and "Bought 10 weight upgrades." or "rev_Weight_Update not found.", Duration = 3, Image = ok and "check-circle" or "x-circle" })
+            local ok = clickGuiButton(guiButton("Frames", "KickUpgrades", "ScrollingFrame", "+10 Kick", "Button"))
+            Rayfield:Notify({ Title = ok and "Kick +10" or "Open Kick Menu", Content = ok and "Bought +10 kick power." or "Open the Kick Upgrades menu once first.", Duration = 3, Image = ok and "check-circle" or "alert-triangle" })
+        end,
+    })
+
+    KlbTab:CreateButton({
+        Name = "Buy All Affordable Weights",
+        Callback = function()
+            local sf = guiButton("Frames", "WeightUI", "ScrollingFrame")
+            local count = 0
+            if sf then
+                for _, child in ipairs(sf:GetChildren()) do
+                    local btns = child:FindFirstChild("Buttons")
+                    local interact = btns and btns:FindFirstChild("InteractButton")
+                    if interact then
+                        if clickGuiButton(interact) then count = count + 1 end
+                        task.wait(0.05)
+                    end
+                end
+            end
+            Rayfield:Notify({ Title = "Weights", Content = (count > 0) and ("Tried buying " .. count .. " weights.") or "Open the Weight menu once first.", Duration = 4, Image = count > 0 and "check-circle" or "alert-triangle" })
         end,
     })
 
