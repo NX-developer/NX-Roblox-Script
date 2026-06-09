@@ -41,6 +41,26 @@ local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 local Camera = Workspace.CurrentCamera
 
+local function copyToClipboard(text)
+    if type(setclipboard) == "function" then
+        local ok = pcall(setclipboard, text)
+        if ok then return true end
+    end
+    if type(toclipboard) == "function" then
+        local ok = pcall(toclipboard, text)
+        if ok then return true end
+    end
+    if type(set_clipboard) == "function" then
+        local ok = pcall(set_clipboard, text)
+        if ok then return true end
+    end
+    if syn and type(syn.write_clipboard) == "function" then
+        local ok = pcall(syn.write_clipboard, text)
+        if ok then return true end
+    end
+    return false
+end
+
 local flyConnection, noclipConnection, espActive, espPlayerData = nil, nil, false, {}
 local aimbotConnection, cameraLockConnection, hitboxConnection, hitboxHighlights = nil, nil, nil, {}
 local infiniteJumpConnection = nil
@@ -3268,58 +3288,66 @@ if KlbTab then
     KlbTab:CreateSection("Diagnostics (Read First)")
 
     KlbTab:CreateButton({
-        Name = "Scan Remotes (Kick / Rebirth / Upgrade)",
+        Name = "Scan Remotes (Copy to Clipboard)",
         Callback = function()
             local names = {}
             local seen = {}
             local function scan(container)
                 for _, obj in ipairs(container:GetDescendants()) do
                     if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                        if not seen[obj.Name] then
-                            seen[obj.Name] = true
-                            table.insert(names, obj.Name)
+                        if not seen[obj:GetFullName()] then
+                            seen[obj:GetFullName()] = true
+                            table.insert(names, obj.ClassName .. "  " .. obj:GetFullName())
                         end
                     end
                 end
             end
             pcall(function() scan(ReplicatedStorage) end)
-            local content = (#names == 0) and "No remotes found in ReplicatedStorage." or ("Remotes: " .. table.concat(names, ", "))
-            Rayfield:Notify({ Title = "All Remotes", Content = content, Duration = 12, Image = "radio" })
-            print("[DeltaProHub] KLB Remotes:", table.concat(names, ", "))
+            local full = "=== REMOTES (" .. #names .. ") ===\n" .. table.concat(names, "\n")
+            print(full)
+            local copied = copyToClipboard(full)
+            Rayfield:Notify({
+                Title = "Remotes: " .. #names,
+                Content = copied and "Copied to clipboard. Paste it to me." or "Clipboard unsupported - read console.",
+                Duration = 8,
+                Image = "radio",
+            })
         end,
     })
 
     KlbTab:CreateButton({
-        Name = "Scan My Plot (Fix Base Teleport)",
+        Name = "Scan My Plot (Copy to Clipboard)",
         Callback = function()
             local plots = Workspace:FindFirstChild("Plots")
             if not plots then
                 Rayfield:Notify({ Title = "No Plots Folder", Content = "Workspace has no 'Plots'. Tell me what holds the bases.", Duration = 6, Image = "alert-triangle" })
                 return
             end
-            local lines = {}
+            local lines = {"=== PLOTS (" .. #plots:GetChildren() .. ") ===", "My name: " .. LocalPlayer.Name}
             for _, plot in ipairs(plots:GetChildren()) do
-                local info = plot.Name
-                for _, v in ipairs(plot:GetChildren()) do
-                    if v:IsA("StringValue") or v:IsA("ObjectValue") or v:IsA("IntValue") then
+                local info = "[" .. plot.Name .. "] (" .. plot.ClassName .. ")"
+                for _, v in ipairs(plot:GetDescendants()) do
+                    if v:IsA("StringValue") or v:IsA("ObjectValue") or v:IsA("IntValue") or v:IsA("BoolValue") then
                         local val = (v:IsA("ObjectValue") and v.Value and v.Value.Name) or tostring(v.Value)
-                        info = info .. " | " .. v.Name .. "=" .. tostring(val)
+                        info = info .. "\n    " .. v.Name .. " = " .. tostring(val)
                     end
                 end
                 table.insert(lines, info)
-                print("[DeltaProHub] Plot:", info)
             end
+            local full = table.concat(lines, "\n")
+            print(full)
+            local copied = copyToClipboard(full)
             Rayfield:Notify({
-                Title = "Plots (" .. #plots:GetChildren() .. ")",
-                Content = "Printed full details to console. First: " .. (lines[1] or "none"),
-                Duration = 12,
+                Title = "Plots: " .. #plots:GetChildren(),
+                Content = copied and "Copied to clipboard. Paste it to me." or "Clipboard unsupported - read console.",
+                Duration = 8,
                 Image = "search",
             })
         end,
     })
 
     KlbTab:CreateButton({
-        Name = "Scan On-Screen Buttons (Find 2x Button)",
+        Name = "Scan On-Screen Buttons (Copy to Clipboard)",
         Callback = function()
             local pg = LocalPlayer:FindFirstChild("PlayerGui")
             if not pg then return end
@@ -3327,37 +3355,52 @@ if KlbTab then
             for _, obj in ipairs(pg:GetDescendants()) do
                 if obj:IsA("TextButton") or obj:IsA("ImageButton") then
                     if obj.Visible then
-                        local txt = (obj:IsA("TextButton") and obj.Text ~= "" and (" '" .. obj.Text .. "'")) or ""
-                        local entry = obj.Name .. txt
-                        table.insert(found, entry)
-                        print("[DeltaProHub] Button:", obj:GetFullName(), txt)
+                        local txt = (obj:IsA("TextButton") and obj.Text ~= "" and ("  TEXT='" .. obj.Text .. "'")) or ""
+                        table.insert(found, obj:GetFullName() .. txt)
                     end
                 end
             end
-            local content = (#found == 0) and "No visible buttons found." or ("Visible buttons printed to console. Count: " .. #found)
-            Rayfield:Notify({ Title = "On-Screen Buttons", Content = content, Duration = 10, Image = "mouse-pointer" })
+            local full = "=== VISIBLE BUTTONS (" .. #found .. ") ===\n" .. table.concat(found, "\n")
+            print(full)
+            local copied = copyToClipboard(full)
+            Rayfield:Notify({
+                Title = "Buttons: " .. #found,
+                Content = copied and "Copied to clipboard. Paste it to me (look for the 2x button)." or "Clipboard unsupported - read console.",
+                Duration = 8,
+                Image = "mouse-pointer",
+            })
         end,
     })
 
     KlbTab:CreateButton({
-        Name = "Scan Shop Items (Find Buyables)",
+        Name = "Scan Shop Items (Copy to Clipboard)",
         Callback = function()
             local out = {}
             local function dump(folderName)
                 local f = Workspace:FindFirstChild(folderName)
                 if f then
                     for _, c in ipairs(f:GetDescendants()) do
-                        if c:IsA("BasePart") or c:IsA("Model") or c:IsA("ProximityPrompt") then
-                            print("[DeltaProHub] " .. folderName .. ":", c:GetFullName())
-                            table.insert(out, c.Name)
+                        if c:IsA("Model") or c:IsA("ProximityPrompt") then
+                            local extra = ""
+                            if c:IsA("ProximityPrompt") then
+                                extra = "  ACTION='" .. tostring(c.ActionText) .. "' OBJ='" .. tostring(c.ObjectText) .. "'"
+                            end
+                            table.insert(out, c.ClassName .. "  " .. c:GetFullName() .. extra)
                         end
                     end
                 end
             end
             dump("Shops")
             dump("VolcanicShop")
-            local content = (#out == 0) and "Nothing under Shops/VolcanicShop." or ("Shop contents printed to console. Items: " .. #out)
-            Rayfield:Notify({ Title = "Shop Scan", Content = content, Duration = 10, Image = "shopping-cart" })
+            local full = "=== SHOP ITEMS (" .. #out .. ") ===\n" .. table.concat(out, "\n")
+            print(full)
+            local copied = copyToClipboard(full)
+            Rayfield:Notify({
+                Title = "Shop: " .. #out,
+                Content = copied and "Copied to clipboard. Paste it to me." or "Clipboard unsupported - read console.",
+                Duration = 8,
+                Image = "shopping-cart",
+            })
         end,
     })
 end
