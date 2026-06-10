@@ -10,6 +10,8 @@
     Game-specific tabs appear only when you are inside the matching game.
 
     License: Apache License 2.0 (see LICENSE).
+    Author: NX-developer (Novatex) - https://github.com/NX-developer
+    Repository: https://github.com/NX-developer/NX-Roblox-Script
     Credits: UI built with the Rayfield library by Sirius Software, used under its own license.
 ]]
 

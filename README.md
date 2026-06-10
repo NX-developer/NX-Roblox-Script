@@ -32,6 +32,13 @@ Works on PC and mobile. Tested with standard Roblox executors.
 ## License
 Licensed under the **Apache License 2.0** — see [LICENSE](LICENSE).
 
+## Author
+Made by **NX-developer** (Novatex).
+- GitHub: https://github.com/NX-developer
+- Open-source repository: https://github.com/NX-developer/NX-Roblox-Script
+
+This project is fully open source — feel free to read, learn from, fork, and improve it under the Apache 2.0 license.
+
 ## Credits
 - **UI:** [Rayfield](https://github.com/SiriusSoftwareLtd/Rayfield) by Sirius Software, used under its own license.
 
