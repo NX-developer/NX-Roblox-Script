@@ -35,6 +35,9 @@ Licensed under the **Apache License 2.0** — see [LICENSE](LICENSE).
 ## Author
 Made by **NX-developer** (Novatex).
 - GitHub: https://github.com/NX-developer
+- Discord (profile): https://discord.com/users/1063980930001285180
+- Discord (server): https://discord.gg/CydYr9UTX
+- YouTube: https://youtube.com/@novatexpanel
 - Open-source repository: https://github.com/NX-developer/NX-Roblox-Script
 
 This project is fully open source — feel free to read, learn from, fork, and improve it under the Apache 2.0 license.
