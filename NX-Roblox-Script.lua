@@ -16,14 +16,14 @@
 local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "Delta Pro Hub",
+    Name = "NX Roblox Script",
     Icon = "terminal",
-    LoadingTitle = "Advanced Open Source Hub",
-    LoadingSubtitle = "GodMode v2 + Slots Fixed",
+    LoadingTitle = "NX Roblox Script",
+    LoadingSubtitle = "by NX-developer (Novatex)",
     Theme = "DarkBlue",
     ConfigurationSaving = {
        Enabled = true,
-       FolderName = "DeltaHubPro",
+       FolderName = "NXRobloxScript",
        FileName = "config"
     },
     KeySystem = false
@@ -2155,6 +2155,21 @@ MiscTab:CreateButton({
             end
             hum.Health = 0
         end
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Save Configuration",
+    Callback = function()
+        local ok = pcall(function()
+            if Rayfield.SaveConfiguration then Rayfield:SaveConfiguration() end
+        end)
+        Rayfield:Notify({
+            Title = ok and "Saved" or "Save Unavailable",
+            Content = ok and "Your toggles and settings are saved for next time." or "Configuration saving isn't supported here.",
+            Duration = 4,
+            Image = ok and "save" or "alert-triangle",
+        })
     end,
 })
 
