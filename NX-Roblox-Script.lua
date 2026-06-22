@@ -762,6 +762,15 @@ if KLB_PLACE_IDS[game.PlaceId] then
     KlbTab = Window:CreateTab("Lucky Block", "gift")
 end
 
+local function placeMatches(idTable, nameKeywords)
+    if idTable[game.PlaceId] then return true end
+    local n = string.lower(tostring(game.Name))
+    for _, kw in ipairs(nameKeywords) do
+        if string.find(n, kw, 1, true) then return true end
+    end
+    return false
+end
+
 local GAG_PLACE_IDS = {
     [77085202503540] = true,
     [124977557560410] = true,
@@ -769,7 +778,7 @@ local GAG_PLACE_IDS = {
     [126884695634066] = true,
 }
 local GagTab = nil
-if GAG_PLACE_IDS[game.PlaceId] then
+if placeMatches(GAG_PLACE_IDS, {"garden"}) then
     GagTab = Window:CreateTab("Grow a Garden", "sprout")
 end
 
