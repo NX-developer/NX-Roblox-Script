@@ -762,6 +762,15 @@ if KLB_PLACE_IDS[game.PlaceId] then
     KlbTab = Window:CreateTab("Lucky Block", "gift")
 end
 
+local GAG_PLACE_IDS = {
+    [97598239454123] = true,
+    [126884695634066] = true,
+}
+local GagTab = nil
+if GAG_PLACE_IDS[game.PlaceId] then
+    GagTab = Window:CreateTab("Grow a Garden", "sprout")
+end
+
 local GodModeToggle = MainTab:CreateToggle({
     Name = "God Mode (v2 - Kill Brick Resistant)",
     CurrentValue = false,
@@ -3500,9 +3509,153 @@ if KlbTab then
     })
 end
 
+if GagTab then
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    local gagAutoHarvest = false
+    local gagAutoSell = false
+    local gagAutoPlant = false
+
+    local function gagFirePromptsByText(keywords)
+        local n = 0
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") and obj.Enabled then
+                local txt = string.lower(tostring(obj.ActionText) .. " " .. tostring(obj.ObjectText) .. " " .. obj.Name)
+                for _, kw in ipairs(keywords) do
+                    if string.find(txt, kw, 1, true) then
+                        if type(fireproximityprompt) == "function" then
+                            pcall(fireproximityprompt, obj)
+                            n = n + 1
+                        end
+                        break
+                    end
+                end
+            end
+        end
+        return n
+    end
+
+    GagTab:CreateSection("Auto Farm (Generic - refine after scan)")
+
+    GagTab:CreateToggle({
+        Name = "Auto Harvest (Fire Harvest Prompts)",
+        CurrentValue = false,
+        Callback = function(Value)
+            gagAutoHarvest = Value
+            if Value then
+                task.spawn(function()
+                    while gagAutoHarvest do
+                        gagFirePromptsByText({"harvest", "collect", "pick", "gather"})
+                        task.wait(0.5)
+                    end
+                end)
+                Rayfield:Notify({ Title = "Auto Harvest ON", Content = "Firing harvest/collect prompts. Send a scan if it misses any.", Duration = 5, Image = "scissors" })
+            end
+        end,
+    })
+
+    GagTab:CreateToggle({
+        Name = "Auto Sell (Fire Sell Prompts)",
+        CurrentValue = false,
+        Callback = function(Value)
+            gagAutoSell = Value
+            if Value then
+                task.spawn(function()
+                    while gagAutoSell do
+                        gagFirePromptsByText({"sell"})
+                        task.wait(2)
+                    end
+                end)
+                Rayfield:Notify({ Title = "Auto Sell ON", Content = "Firing sell prompts every 2s.", Duration = 4, Image = "dollar-sign" })
+            end
+        end,
+    })
+
+    GagTab:CreateToggle({
+        Name = "Auto Buy / Plant Prompts",
+        CurrentValue = false,
+        Callback = function(Value)
+            gagAutoPlant = Value
+            if Value then
+                task.spawn(function()
+                    while gagAutoPlant do
+                        gagFirePromptsByText({"buy", "plant", "purchase", "seed"})
+                        task.wait(1.5)
+                    end
+                end)
+                Rayfield:Notify({ Title = "Auto Buy/Plant ON", Content = "Firing buy/plant prompts. Refine after a scan.", Duration = 4, Image = "shopping-cart" })
+            end
+        end,
+    })
+
+    GagTab:CreateSection("Diagnostics (Scan First, Paste to Me)")
+
+    GagTab:CreateButton({
+        Name = "Scan Remotes (Copy to Clipboard)",
+        Callback = function()
+            local names = {}
+            local seen = {}
+            for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                    if not seen[obj:GetFullName()] then
+                        seen[obj:GetFullName()] = true
+                        table.insert(names, obj.ClassName .. "  " .. obj:GetFullName())
+                    end
+                end
+            end
+            local full = "=== GAG REMOTES (" .. #names .. ") ===\n" .. table.concat(names, "\n")
+            print(full)
+            local copied = copyToClipboard(full)
+            Rayfield:Notify({ Title = "Remotes: " .. #names, Content = copied and "Copied to clipboard. Paste it to me." or "Clipboard unsupported - read console.", Duration = 8, Image = "radio" })
+        end,
+    })
+
+    GagTab:CreateButton({
+        Name = "Scan On-Screen Buttons (Copy to Clipboard)",
+        Callback = function()
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            if not pg then return end
+            local found = {}
+            for _, obj in ipairs(pg:GetDescendants()) do
+                if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and obj.Visible then
+                    local txt = (obj:IsA("TextButton") and obj.Text ~= "" and ("  TEXT='" .. obj.Text .. "'")) or ""
+                    table.insert(found, obj:GetFullName() .. txt)
+                end
+            end
+            local full = "=== GAG VISIBLE BUTTONS (" .. #found .. ") ===\n" .. table.concat(found, "\n")
+            print(full)
+            local copied = copyToClipboard(full)
+            Rayfield:Notify({ Title = "Buttons: " .. #found, Content = copied and "Copied to clipboard. Paste it to me." or "Clipboard unsupported - read console.", Duration = 8, Image = "mouse-pointer" })
+        end,
+    })
+
+    GagTab:CreateButton({
+        Name = "Scan Garden + Prompts (Copy to Clipboard)",
+        Callback = function()
+            local lines = {"=== WORKSPACE TOP-LEVEL ==="}
+            for _, c in ipairs(Workspace:GetChildren()) do
+                table.insert(lines, c.ClassName .. "  " .. c.Name)
+            end
+            table.insert(lines, "")
+            table.insert(lines, "=== PROXIMITY PROMPTS ===")
+            local promptCount = 0
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") then
+                    promptCount = promptCount + 1
+                    table.insert(lines, obj:GetFullName() .. "  ACTION='" .. tostring(obj.ActionText) .. "' OBJ='" .. tostring(obj.ObjectText) .. "'")
+                end
+            end
+            local full = table.concat(lines, "\n")
+            print(full)
+            local copied = copyToClipboard(full)
+            Rayfield:Notify({ Title = "Garden Scan", Content = copied and ("Copied (" .. promptCount .. " prompts). Paste it to me.") or "Clipboard unsupported - read console.", Duration = 8, Image = "search" })
+        end,
+    })
+end
+
 Rayfield:Notify({
     Title = "Hub Ready",
-    Content = "Kick a Lucky Block support added (scan remotes to finish setup).",
+    Content = "NX Roblox Script loaded. Game tabs appear automatically when supported.",
     Duration = 5,
     Image = "check-circle",
 })
