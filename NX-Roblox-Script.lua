@@ -2186,6 +2186,21 @@ MiscTab:CreateButton({
 })
 
 MiscTab:CreateButton({
+    Name = "Show Current Place ID (Copy)",
+    Callback = function()
+        local id = tostring(game.PlaceId)
+        local copied = copyToClipboard(id)
+        Rayfield:Notify({
+            Title = "Place ID: " .. id,
+            Content = copied and "Copied. Paste it to your developer to enable the game tab." or "Place ID shown above.",
+            Duration = 10,
+            Image = "hash",
+        })
+        print("[NX] Current PlaceId:", id)
+    end,
+})
+
+MiscTab:CreateButton({
     Name = "Rejoin Server",
     Callback = function()
         local TeleportService = game:GetService("TeleportService")
@@ -3584,6 +3599,54 @@ if GagTab then
                     end
                 end)
                 Rayfield:Notify({ Title = "Auto Buy/Plant ON", Content = "Firing buy/plant prompts. Refine after a scan.", Duration = 4, Image = "shopping-cart" })
+            end
+        end,
+    })
+
+    GagTab:CreateSection("Night Watch (Notifications Only)")
+
+    local gagNightAlerts = false
+    GagTab:CreateToggle({
+        Name = "Night Alerts (Protect / Steal Reminder)",
+        CurrentValue = false,
+        Callback = function(Value)
+            gagNightAlerts = Value
+            if Value then
+                task.spawn(function()
+                    local Lighting = game:GetService("Lighting")
+                    local lastIsNight = nil
+                    while gagNightAlerts do
+                        local clock = Lighting.ClockTime
+                        local isNight = (clock >= 18 or clock < 6)
+                        if lastIsNight == nil then
+                            lastIsNight = isNight
+                        elseif isNight ~= lastIsNight then
+                            lastIsNight = isNight
+                            if isNight then
+                                Rayfield:Notify({
+                                    Title = "Night has fallen",
+                                    Content = "Protect your garden - this is the time others can steal, and the steal phase is open.",
+                                    Duration = 8,
+                                    Image = "moon",
+                                })
+                            else
+                                Rayfield:Notify({
+                                    Title = "Daytime",
+                                    Content = "Day is back. Your garden is safer now.",
+                                    Duration = 6,
+                                    Image = "sun",
+                                })
+                            end
+                        end
+                        task.wait(2)
+                    end
+                end)
+                Rayfield:Notify({
+                    Title = "Night Alerts ON",
+                    Content = "You'll get a heads-up when night and day begin. Notification only.",
+                    Duration = 5,
+                    Image = "bell",
+                })
             end
         end,
     })
