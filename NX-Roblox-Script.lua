@@ -3540,79 +3540,151 @@ if GagTab then
 
     local gagAutoHarvest = false
     local gagAutoSell = false
-    local gagAutoPlant = false
+    local gagAutoGrow = false
+    local gagSelectedSeed = "Carrot"
 
-    local function gagFirePromptsByText(keywords)
+    local function gagFire(name, ...)
+        local args = {...}
+        local r = ReplicatedStorage:FindFirstChild(name, true)
+        if r then
+            if r:IsA("RemoteEvent") then
+                pcall(function() r:FireServer(table.unpack(args)) end)
+                return true
+            elseif r:IsA("RemoteFunction") then
+                pcall(function() r:InvokeServer(table.unpack(args)) end)
+                return true
+            end
+        end
+        return false
+    end
+
+    local function gagCollectOwnCrops()
         local n = 0
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("ProximityPrompt") and obj.Enabled then
-                local txt = string.lower(tostring(obj.ActionText) .. " " .. tostring(obj.ObjectText) .. " " .. obj.Name)
-                for _, kw in ipairs(keywords) do
-                    if string.find(txt, kw, 1, true) then
+                local action = string.lower(tostring(obj.ActionText))
+                if string.find(action, "steal", 1, true) then
+                    -- never auto-steal from other players
+                else
+                    if string.find(action, "collect", 1, true) or string.find(action, "harvest", 1, true)
+                        or string.find(action, "pick", 1, true) or string.find(action, "gather", 1, true) then
                         if type(fireproximityprompt) == "function" then
                             pcall(fireproximityprompt, obj)
                             n = n + 1
                         end
-                        break
                     end
                 end
             end
         end
+        gagFire("Collect")
         return n
     end
 
-    GagTab:CreateSection("Auto Farm (Generic - refine after scan)")
+    local function gagGrowAll()
+        local fired = gagFire("GrowAllToolActivated")
+        local clicked = clickGuiButton(guiButton("GrowingList", "Frame", "Header", "GrowAll"))
+        return fired or clicked
+    end
+
+    local function gagSellInventory()
+        local a = gagFire("Sell_Inventory")
+        local b = gagFire("SellFood_RE")
+        local c = clickGuiButton(guiButton("TeleportButtons", "TeleportButtons", "SellButton"))
+        return a or b or c
+    end
+
+    GagTab:CreateSection("Auto Farm (Your Own Garden)")
+
+    GagTab:CreateButton({
+        Name = "Grow All (Instant)",
+        Callback = function()
+            local ok = gagGrowAll()
+            Rayfield:Notify({ Title = ok and "Grow All" or "Not Found", Content = ok and "Triggered grow-all on your plants." or "Grow-all action not found here.", Duration = 4, Image = ok and "sprout" or "alert-triangle" })
+        end,
+    })
 
     GagTab:CreateToggle({
-        Name = "Auto Harvest (Fire Harvest Prompts)",
+        Name = "Auto Grow All",
+        CurrentValue = false,
+        Callback = function(Value)
+            gagAutoGrow = Value
+            if Value then
+                task.spawn(function()
+                    while gagAutoGrow do
+                        gagGrowAll()
+                        task.wait(3)
+                    end
+                end)
+                Rayfield:Notify({ Title = "Auto Grow All ON", Content = "Keeping your plants grown.", Duration = 4, Image = "sprout" })
+            end
+        end,
+    })
+
+    GagTab:CreateToggle({
+        Name = "Auto Collect (Your Crops Only)",
         CurrentValue = false,
         Callback = function(Value)
             gagAutoHarvest = Value
             if Value then
                 task.spawn(function()
                     while gagAutoHarvest do
-                        gagFirePromptsByText({"harvest", "collect", "pick", "gather"})
+                        gagCollectOwnCrops()
                         task.wait(0.5)
                     end
                 end)
-                Rayfield:Notify({ Title = "Auto Harvest ON", Content = "Firing harvest/collect prompts. Send a scan if it misses any.", Duration = 5, Image = "scissors" })
+                Rayfield:Notify({ Title = "Auto Collect ON", Content = "Collecting your own ripe crops. Steal prompts are never touched.", Duration = 5, Image = "scissors" })
             end
         end,
     })
 
     GagTab:CreateToggle({
-        Name = "Auto Sell (Fire Sell Prompts)",
+        Name = "Auto Sell Inventory",
         CurrentValue = false,
         Callback = function(Value)
             gagAutoSell = Value
             if Value then
                 task.spawn(function()
                     while gagAutoSell do
-                        gagFirePromptsByText({"sell"})
-                        task.wait(2)
+                        gagSellInventory()
+                        task.wait(5)
                     end
                 end)
-                Rayfield:Notify({ Title = "Auto Sell ON", Content = "Firing sell prompts every 2s.", Duration = 4, Image = "dollar-sign" })
+                Rayfield:Notify({ Title = "Auto Sell ON", Content = "Selling your harvested inventory every 5s.", Duration = 4, Image = "dollar-sign" })
             end
         end,
     })
 
-    GagTab:CreateToggle({
-        Name = "Auto Buy / Plant Prompts",
-        CurrentValue = false,
-        Callback = function(Value)
-            gagAutoPlant = Value
-            if Value then
-                task.spawn(function()
-                    while gagAutoPlant do
-                        gagFirePromptsByText({"buy", "plant", "purchase", "seed"})
-                        task.wait(1.5)
-                    end
-                end)
-                Rayfield:Notify({ Title = "Auto Buy/Plant ON", Content = "Firing buy/plant prompts. Refine after a scan.", Duration = 4, Image = "shopping-cart" })
-            end
+    GagTab:CreateSection("Seed Shop")
+
+    GagTab:CreateDropdown({
+        Name = "Seed to Buy",
+        Options = {"Carrot", "Strawberry", "Blueberry", "Tomato", "Corn", "Apple", "Bamboo", "Watermelon", "Pumpkin", "Pineapple", "Mushroom", "Cactus", "Banana", "Grape", "Coconut", "Mango", "Dragon Fruit", "Cherry", "Sunflower"},
+        CurrentOption = {"Carrot"},
+        Callback = function(opt)
+            if type(opt) == "table" then gagSelectedSeed = opt[1] else gagSelectedSeed = opt end
         end,
     })
+
+    GagTab:CreateButton({
+        Name = "Buy Selected Seed",
+        Callback = function()
+            local ok = gagFire("BuySeedStock", gagSelectedSeed)
+            Rayfield:Notify({ Title = ok and ("Bought: " .. tostring(gagSelectedSeed)) or "Not Found", Content = ok and "Sent buy request to the seed shop." or "BuySeedStock remote not found (this may be the Replica version - open the shop and use Auto Buy via prompts).", Duration = 5, Image = ok and "shopping-cart" or "alert-triangle" })
+        end,
+    })
+
+    GagTab:CreateButton({
+        Name = "Buy Selected Seed  x10",
+        Callback = function()
+            local any = false
+            for i = 1, 10 do
+                if gagFire("BuySeedStock", gagSelectedSeed) then any = true end
+                task.wait(0.06)
+            end
+            Rayfield:Notify({ Title = any and ("Bought x10: " .. tostring(gagSelectedSeed)) or "Not Found", Content = any and "Sent 10 buy requests." or "BuySeedStock remote not found here.", Duration = 4, Image = any and "shopping-cart" or "alert-triangle" })
+        end,
+    })
+
 
     GagTab:CreateSection("Night Watch (Notifications Only)")
 
