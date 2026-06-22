@@ -763,6 +763,8 @@ if KLB_PLACE_IDS[game.PlaceId] then
 end
 
 local GAG_PLACE_IDS = {
+    [77085202503540] = true,
+    [124977557560410] = true,
     [97598239454123] = true,
     [126884695634066] = true,
 }
