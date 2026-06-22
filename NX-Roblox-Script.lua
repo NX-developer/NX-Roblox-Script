@@ -3543,6 +3543,19 @@ if GagTab then
     local gagAutoGrow = false
     local gagSelectedSeed = "Carrot"
 
+    local gagV1Ids = { [124977557560410] = true, [126884695634066] = true }
+    local gagV2Ids = { [77085202503540] = true, [97598239454123] = true }
+    local gagVersion
+    if gagV1Ids[game.PlaceId] then
+        gagVersion = 1
+    elseif gagV2Ids[game.PlaceId] then
+        gagVersion = 2
+    elseif ReplicatedStorage:FindFirstChild("GameEvents") then
+        gagVersion = 1
+    else
+        gagVersion = 2
+    end
+
     local function gagFire(name, ...)
         local args = {...}
         local r = ReplicatedStorage:FindFirstChild(name, true)
@@ -3594,6 +3607,8 @@ if GagTab then
     end
 
     GagTab:CreateSection("Auto Farm (Your Own Garden)")
+
+    GagTab:CreateLabel("Detected: Grow a Garden " .. tostring(gagVersion) .. (gagVersion == 1 and "  (named remotes)" or "  (Replica / GUI based)"))
 
     GagTab:CreateButton({
         Name = "Grow All (Instant)",
@@ -3686,53 +3701,55 @@ if GagTab then
     })
 
 
-    GagTab:CreateSection("Night Watch (Notifications Only)")
+    if gagVersion == 2 then
+        GagTab:CreateSection("Night Watch (Notifications Only)")
 
-    local gagNightAlerts = false
-    GagTab:CreateToggle({
-        Name = "Night Alerts (Protect / Steal Reminder)",
-        CurrentValue = false,
-        Callback = function(Value)
-            gagNightAlerts = Value
-            if Value then
-                task.spawn(function()
-                    local Lighting = game:GetService("Lighting")
-                    local lastIsNight = nil
-                    while gagNightAlerts do
-                        local clock = Lighting.ClockTime
-                        local isNight = (clock >= 18 or clock < 6)
-                        if lastIsNight == nil then
-                            lastIsNight = isNight
-                        elseif isNight ~= lastIsNight then
-                            lastIsNight = isNight
-                            if isNight then
-                                Rayfield:Notify({
-                                    Title = "Night has fallen",
-                                    Content = "Protect your garden - this is the time others can steal, and the steal phase is open.",
-                                    Duration = 8,
-                                    Image = "moon",
-                                })
-                            else
-                                Rayfield:Notify({
-                                    Title = "Daytime",
-                                    Content = "Day is back. Your garden is safer now.",
-                                    Duration = 6,
-                                    Image = "sun",
-                                })
+        local gagNightAlerts = false
+        GagTab:CreateToggle({
+            Name = "Night Alerts (Protect / Steal Reminder)",
+            CurrentValue = false,
+            Callback = function(Value)
+                gagNightAlerts = Value
+                if Value then
+                    task.spawn(function()
+                        local Lighting = game:GetService("Lighting")
+                        local lastIsNight = nil
+                        while gagNightAlerts do
+                            local clock = Lighting.ClockTime
+                            local isNight = (clock >= 18 or clock < 6)
+                            if lastIsNight == nil then
+                                lastIsNight = isNight
+                            elseif isNight ~= lastIsNight then
+                                lastIsNight = isNight
+                                if isNight then
+                                    Rayfield:Notify({
+                                        Title = "Night has fallen",
+                                        Content = "Protect your garden - this is the time others can steal, and the steal phase is open.",
+                                        Duration = 8,
+                                        Image = "moon",
+                                    })
+                                else
+                                    Rayfield:Notify({
+                                        Title = "Daytime",
+                                        Content = "Day is back. Your garden is safer now.",
+                                        Duration = 6,
+                                        Image = "sun",
+                                    })
+                                end
                             end
+                            task.wait(2)
                         end
-                        task.wait(2)
-                    end
-                end)
-                Rayfield:Notify({
-                    Title = "Night Alerts ON",
-                    Content = "You'll get a heads-up when night and day begin. Notification only.",
-                    Duration = 5,
-                    Image = "bell",
-                })
-            end
-        end,
-    })
+                    end)
+                    Rayfield:Notify({
+                        Title = "Night Alerts ON",
+                        Content = "You'll get a heads-up when night and day begin. Notification only.",
+                        Duration = 5,
+                        Image = "bell",
+                    })
+                end
+            end,
+        })
+    end
 
     GagTab:CreateSection("Diagnostics (Scan First, Paste to Me)")
 
