@@ -2370,6 +2370,37 @@ MiscTab:CreateButton({
     end,
 })
 
+MiscTab:CreateSection("Join Game by ID")
+
+local joinPlaceId = ""
+MiscTab:CreateInput({
+    Name = "Place ID",
+    PlaceholderText = "e.g. 77085202503540",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(text)
+        joinPlaceId = text
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Join Game",
+    Callback = function()
+        local id = tonumber((joinPlaceId or ""):gsub("%s+", ""))
+        if not id then
+            Rayfield:Notify({ Title = "Invalid ID", Content = "Enter a numeric Place ID first.", Duration = 4, Image = "alert-triangle" })
+            return
+        end
+        Rayfield:Notify({ Title = "Joining...", Content = "Teleporting to place " .. id .. ".", Duration = 4, Image = "log-in" })
+        local TeleportService = game:GetService("TeleportService")
+        local ok = pcall(function()
+            TeleportService:Teleport(id, LocalPlayer)
+        end)
+        if not ok then
+            Rayfield:Notify({ Title = "Teleport Failed", Content = "Couldn't teleport to that ID. It may be a universe ID, not a place ID.", Duration = 6, Image = "x-circle" })
+        end
+    end,
+})
+
 MiscTab:CreateButton({
     Name = "Server Hop (Random)",
     Callback = function()
