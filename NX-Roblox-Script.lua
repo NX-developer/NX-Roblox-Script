@@ -2226,7 +2226,8 @@ MiscTab:CreateInput({
 MiscTab:CreateButton({
     Name = "Spawn Asset Locally (Only You See It)",
     Callback = function()
-        local id = tonumber((localAssetId or ""):gsub("%s+", ""))
+        local cleanedAsset = (localAssetId or ""):gsub("%s+", "")
+        local id = tonumber(cleanedAsset)
         if not id then
             Rayfield:Notify({ Title = "Invalid ID", Content = "Enter a numeric asset/model ID first.", Duration = 4, Image = "alert-triangle" })
             return
@@ -2385,7 +2386,8 @@ MiscTab:CreateInput({
 MiscTab:CreateButton({
     Name = "Join Game",
     Callback = function()
-        local id = tonumber((joinPlaceId or ""):gsub("%s+", ""))
+        local cleanedPlace = (joinPlaceId or ""):gsub("%s+", "")
+        local id = tonumber(cleanedPlace)
         if not id then
             Rayfield:Notify({ Title = "Invalid ID", Content = "Enter a numeric Place ID first.", Duration = 4, Image = "alert-triangle" })
             return
