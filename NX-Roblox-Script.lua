@@ -2363,6 +2363,112 @@ MiscTab:CreateButton({
     end,
 })
 
+local cosmeticType = "Shirt"
+MiscTab:CreateDropdown({
+    Name = "Apply ID As",
+    Options = {"Shirt", "Pants", "Face", "Animation (others can see)"},
+    CurrentOption = {"Shirt"},
+    Callback = function(opt)
+        if type(opt) == "table" then cosmeticType = opt[1] else cosmeticType = opt end
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Apply Cosmetic (uses Asset ID field)",
+    Callback = function()
+        local cleaned = (localAssetId or ""):gsub("%s+", "")
+        local id = tonumber(cleaned)
+        if not id then
+            Rayfield:Notify({ Title = "Invalid ID", Content = "Type the ID in the 'Asset / Model ID' field above first.", Duration = 5, Image = "alert-triangle" })
+            return
+        end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local assetUrl = "rbxassetid://" .. id
+
+        if cosmeticType == "Shirt" then
+            local shirt = char:FindFirstChildOfClass("Shirt") or Instance.new("Shirt")
+            shirt.ShirtTemplate = assetUrl
+            shirt.Parent = char
+            Rayfield:Notify({ Title = "Shirt Applied", Content = "Local only. Use the clothing TEMPLATE id if it doesn't show.", Duration = 6, Image = "shirt" })
+        elseif cosmeticType == "Pants" then
+            local pants = char:FindFirstChildOfClass("Pants") or Instance.new("Pants")
+            pants.PantsTemplate = assetUrl
+            pants.Parent = char
+            Rayfield:Notify({ Title = "Pants Applied", Content = "Local only. Use the clothing TEMPLATE id if it doesn't show.", Duration = 6, Image = "shirt" })
+        elseif cosmeticType == "Face" then
+            local head = char:FindFirstChild("Head")
+            if head then
+                local face = head:FindFirstChild("face") or head:FindFirstChildOfClass("Decal")
+                if not face then
+                    face = Instance.new("Decal")
+                    face.Name = "face"
+                    face.Face = Enum.NormalId.Front
+                    face.Parent = head
+                end
+                face.Texture = assetUrl
+                Rayfield:Notify({ Title = "Face Applied", Content = "Local only.", Duration = 5, Image = "smile" })
+            end
+        else
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                local anim = Instance.new("Animation")
+                anim.AnimationId = assetUrl
+                local okPlay = pcall(function()
+                    local animator = hum:FindFirstChildOfClass("Animator") or hum
+                    local track = animator:LoadAnimation(anim)
+                    track:Play()
+                end)
+                Rayfield:Notify({ Title = okPlay and "Animation Playing" or "Animation Failed", Content = okPlay and "Note: animations replicate - other players CAN see this one." or "Couldn't load that animation ID.", Duration = 7, Image = okPlay and "play" or "x-circle" })
+            end
+        end
+    end,
+})
+
+local headlessOn = false
+MiscTab:CreateToggle({
+    Name = "Headless (Local Only)",
+    CurrentValue = false,
+    Callback = function(Value)
+        headlessOn = Value
+        local char = LocalPlayer.Character
+        local head = char and char:FindFirstChild("Head")
+        if head then
+            head.Transparency = Value and 1 or 0
+            local face = head:FindFirstChild("face") or head:FindFirstChildOfClass("Decal")
+            if face then face.Transparency = Value and 1 or 0 end
+            for _, acc in ipairs(char:GetChildren()) do
+                if acc:IsA("Accessory") then
+                    local h = acc:FindFirstChild("Handle")
+                    local att = h and (h:FindFirstChild("HatAttachment") or h:FindFirstChild("FaceFrontAttachment") or h:FindFirstChild("HairAttachment"))
+                    if att then h.Transparency = Value and 1 or 0 end
+                end
+            end
+        end
+        Rayfield:Notify({ Title = Value and "Headless ON" or "Headless OFF", Content = "Local only - others see your normal head.", Duration = 4, Image = "user-x" })
+    end,
+})
+
+local leglessOn = false
+MiscTab:CreateToggle({
+    Name = "Legless (Local Only)",
+    CurrentValue = false,
+    Callback = function(Value)
+        leglessOn = Value
+        local char = LocalPlayer.Character
+        if char then
+            local legNames = { "Left Leg", "Right Leg", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }
+            for _, name in ipairs(legNames) do
+                local part = char:FindFirstChild(name)
+                if part and part:IsA("BasePart") then
+                    part.Transparency = Value and 1 or 0
+                end
+            end
+        end
+        Rayfield:Notify({ Title = Value and "Legless ON" or "Legless OFF", Content = "Local only - others see your normal legs.", Duration = 4, Image = "user-x" })
+    end,
+})
+
 MiscTab:CreateButton({
     Name = "Rejoin Server",
     Callback = function()
@@ -2394,11 +2500,16 @@ MiscTab:CreateButton({
         end
         Rayfield:Notify({ Title = "Joining...", Content = "Teleporting to place " .. id .. ".", Duration = 4, Image = "log-in" })
         local TeleportService = game:GetService("TeleportService")
-        local ok = pcall(function()
+        local ok, err = pcall(function()
             TeleportService:Teleport(id, LocalPlayer)
         end)
         if not ok then
-            Rayfield:Notify({ Title = "Teleport Failed", Content = "Couldn't teleport to that ID. It may be a universe ID, not a place ID.", Duration = 6, Image = "x-circle" })
+            local msg = tostring(err)
+            if string.find(msg, "773") or string.lower(msg):find("restrict") then
+                Rayfield:Notify({ Title = "Restricted (773)", Content = "Roblox blocks teleporting into this game from here. The destination disabled third-party joins - open it from the Roblox app instead.", Duration = 9, Image = "lock" })
+            else
+                Rayfield:Notify({ Title = "Teleport Failed", Content = "Couldn't teleport. Make sure it's a place ID (not a universe ID).", Duration = 6, Image = "x-circle" })
+            end
         end
     end,
 })
