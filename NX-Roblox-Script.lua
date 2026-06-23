@@ -2211,6 +2211,77 @@ MiscTab:CreateButton({
     end,
 })
 
+MiscTab:CreateSection("Local Asset Spawner (Client-Side Only)")
+
+local localAssetId = ""
+MiscTab:CreateInput({
+    Name = "Asset / Model ID",
+    PlaceholderText = "e.g. 1028593",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(text)
+        localAssetId = text
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Spawn Asset Locally (Only You See It)",
+    Callback = function()
+        local id = tonumber((localAssetId or ""):gsub("%s+", ""))
+        if not id then
+            Rayfield:Notify({ Title = "Invalid ID", Content = "Enter a numeric asset/model ID first.", Duration = 4, Image = "alert-triangle" })
+            return
+        end
+        local InsertService = game:GetService("InsertService")
+        local ok, result = pcall(function()
+            return InsertService:LoadAsset(id)
+        end)
+        if not ok or not result then
+            Rayfield:Notify({ Title = "Load Failed", Content = "Couldn't load that ID locally. It may be private or not loadable client-side.", Duration = 6, Image = "x-circle" })
+            return
+        end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local spawnCFrame = hrp and (hrp.CFrame * CFrame.new(0, 0, -6)) or CFrame.new(0, 10, 0)
+        local count = 0
+        for _, obj in ipairs(result:GetChildren()) do
+            obj.Parent = Workspace
+            pcall(function() obj:SetAttribute("NXLocalSpawn", true) end)
+            pcall(function()
+                if obj:IsA("BasePart") then
+                    obj.CFrame = spawnCFrame
+                elseif obj:IsA("Model") then
+                    if not obj.PrimaryPart then
+                        obj.PrimaryPart = obj:FindFirstChildWhichIsA("BasePart")
+                    end
+                    obj:PivotTo(spawnCFrame)
+                end
+            end)
+            count = count + 1
+        end
+        result:Destroy()
+        Rayfield:Notify({
+            Title = count > 0 and "Spawned Locally" or "Nothing Spawned",
+            Content = count > 0 and "Loaded client-side. Only you can see this; it is not sent to the server." or "The asset loaded but had no spawnable parts.",
+            Duration = 6,
+            Image = count > 0 and "package" or "alert-triangle",
+        })
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Clear My Spawned Assets",
+    Callback = function()
+        local removed = 0
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if obj:GetAttribute("NXLocalSpawn") then
+                obj:Destroy()
+                removed = removed + 1
+            end
+        end
+        Rayfield:Notify({ Title = "Cleared", Content = removed .. " locally spawned item(s) removed.", Duration = 4, Image = "trash-2" })
+    end,
+})
+
 MiscTab:CreateButton({
     Name = "Rejoin Server",
     Callback = function()
@@ -3596,6 +3667,14 @@ if GagTab then
     local function gagGrowAll()
         local fired = gagFire("GrowAllToolActivated")
         local clicked = clickGuiButton(guiButton("GrowingList", "Frame", "Header", "GrowAll"))
+        local gl = guiButton("GrowingList")
+        if gl then
+            pcall(function()
+                if gl:IsA("ScreenGui") then gl.Enabled = false end
+                local frame = gl:FindFirstChild("Frame")
+                if frame then frame.Visible = false end
+            end)
+        end
         return fired or clicked
     end
 
