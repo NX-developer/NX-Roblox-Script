@@ -2239,8 +2239,71 @@ MiscTab:CreateButton({
             Rayfield:Notify({ Title = "Load Failed", Content = "Couldn't load that ID locally. It may be private or not loadable client-side.", Duration = 6, Image = "x-circle" })
             return
         end
+
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+        local function attachAccessoryLocal(accessory)
+            if not char then return false end
+            local handle = accessory:FindFirstChild("Handle")
+            if not handle then return false end
+            local accAtt
+            for _, a in ipairs(handle:GetChildren()) do
+                if a:IsA("Attachment") then accAtt = a break end
+            end
+            if accAtt then
+                local charAtt
+                for _, d in ipairs(char:GetDescendants()) do
+                    if d:IsA("Attachment") and d.Name == accAtt.Name then charAtt = d break end
+                end
+                if charAtt and charAtt.Parent then
+                    for _, w in ipairs(handle:GetChildren()) do
+                        if w:IsA("Weld") or w:IsA("Motor6D") or w:IsA("ManualWeld") then w:Destroy() end
+                    end
+                    handle.Massless = true
+                    handle.CanCollide = false
+                    local weld = Instance.new("Weld")
+                    weld.Name = "NXLocalAccessoryWeld"
+                    weld.Part0 = handle
+                    weld.Part1 = charAtt.Parent
+                    weld.C0 = accAtt.CFrame
+                    weld.C1 = charAtt.CFrame
+                    weld.Parent = handle
+                    accessory:SetAttribute("NXLocalAccessory", true)
+                    accessory.Parent = char
+                    return true
+                end
+            end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                local okAdd = pcall(function() hum:AddAccessory(accessory) end)
+                if okAdd then accessory:SetAttribute("NXLocalAccessory", true) end
+                return okAdd
+            end
+            return false
+        end
+
+        local accessories = {}
+        for _, d in ipairs(result:GetDescendants()) do
+            if d:IsA("Accessory") then table.insert(accessories, d) end
+        end
+
+        if #accessories > 0 and char then
+            local attached = 0
+            for _, acc in ipairs(accessories) do
+                acc.Parent = Workspace
+                if attachAccessoryLocal(acc) then attached = attached + 1 end
+            end
+            result:Destroy()
+            Rayfield:Notify({
+                Title = attached > 0 and "Accessory Equipped" or "Couldn't Attach",
+                Content = attached > 0 and "Equipped locally - only you see it. Take your screenshot!" or "This accessory had no matching attachment point.",
+                Duration = 6,
+                Image = attached > 0 and "smile" or "alert-triangle",
+            })
+            return
+        end
+
         local spawnCFrame = hrp and (hrp.CFrame * CFrame.new(0, 0, -6)) or CFrame.new(0, 10, 0)
         local count = 0
         for _, obj in ipairs(result:GetChildren()) do
@@ -2265,6 +2328,23 @@ MiscTab:CreateButton({
             Duration = 6,
             Image = count > 0 and "package" or "alert-triangle",
         })
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Remove My Local Accessories",
+    Callback = function()
+        local removed = 0
+        local char = LocalPlayer.Character
+        if char then
+            for _, d in ipairs(char:GetChildren()) do
+                if d:IsA("Accessory") and d:GetAttribute("NXLocalAccessory") then
+                    d:Destroy()
+                    removed = removed + 1
+                end
+            end
+        end
+        Rayfield:Notify({ Title = "Removed", Content = removed .. " local accessory/accessories removed.", Duration = 4, Image = "trash-2" })
     end,
 })
 
