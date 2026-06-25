@@ -849,6 +849,79 @@ local function stopGodPosition()
     end
 end
 
+do
+    local safeRollbackEnabled = false
+    local safeHistory = {}
+    local maxHistory = 14
+    local lastHealth = nil
+    local killKeywords = { "kill", "lava", "damage", "trap", "spike", "death", "hazard", "acid", "poison", "fire", "laser", "danger", "void" }
+
+    local function isHazardName(name)
+        local l = string.lower(name)
+        for _, kw in ipairs(killKeywords) do
+            if string.find(l, kw, 1, true) then return true end
+        end
+        return false
+    end
+
+    local function rollbackToSafe(hrp)
+        local target = safeHistory[1]
+        if target then
+            local rot = hrp.CFrame - hrp.CFrame.Position
+            hrp.CFrame = CFrame.new(target) * rot
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            safeHistory = { target }
+        end
+    end
+
+    MainTab:CreateToggle({
+        Name = "Safe Rollback (Anti-Death)",
+        CurrentValue = false,
+        Callback = function(Value)
+            safeRollbackEnabled = Value
+            if Value then
+                safeHistory = {}
+                lastHealth = nil
+                task.spawn(function()
+                    while safeRollbackEnabled do
+                        local char = LocalPlayer.Character
+                        local hum = char and char:FindFirstChildOfClass("Humanoid")
+                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                        if hum and hrp and hum.Health > 0 then
+                            local grounded = hum.FloorMaterial ~= Enum.Material.Air
+                            local hazardBelow = false
+                            local params = RaycastParams.new()
+                            params.FilterType = Enum.RaycastFilterType.Exclude
+                            params.FilterDescendantsInstances = { char }
+                            local hit = Workspace:Raycast(hrp.Position, Vector3.new(0, -10, 0), params)
+                            if hit and hit.Instance and isHazardName(hit.Instance.Name) then
+                                hazardBelow = true
+                            end
+                            local tookDamage = (lastHealth ~= nil and hum.Health < lastHealth - 0.5)
+                            if tookDamage or hazardBelow then
+                                rollbackToSafe(hrp)
+                            elseif grounded then
+                                table.insert(safeHistory, hrp.Position)
+                                if #safeHistory > maxHistory then
+                                    table.remove(safeHistory, 1)
+                                end
+                            end
+                            lastHealth = hum.Health
+                        end
+                        task.wait(0.2)
+                    end
+                end)
+                Rayfield:Notify({
+                    Title = "Safe Rollback ON",
+                    Content = "If something hurts you or you land on a hazard, you snap back to an earlier safe spot.",
+                    Duration = 6,
+                    Image = "shield",
+                })
+            end
+        end,
+    })
+end
+
 local GodPositionToggle = MainTab:CreateToggle({
     Name = "God Position (Sky Lock - 1M Studs Up)",
     CurrentValue = false,
