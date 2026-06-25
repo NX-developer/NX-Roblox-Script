@@ -737,6 +737,7 @@ local CombatTab = Window:CreateTab("Combat", "crosshair")
 local WavesTab = Window:CreateTab("Waves", "waves")
 local TeleportTab = Window:CreateTab("Teleport V2", "map-pin")
 local MiscTab = Window:CreateTab("Misc", "settings")
+local BlocksTab = Window:CreateTab("Blocks", "box")
 
 local MM2_PLACE_IDS = {
     [142823291] = true,
@@ -4273,6 +4274,175 @@ if GagTab then
             Rayfield:Notify({ Title = "Garden Scan", Content = copied and ("Copied (" .. promptCount .. " prompts). Paste it to me.") or "Clipboard unsupported - read console.", Duration = 8, Image = "search" })
         end,
     })
+end
+
+do
+    local placedBlocks = {}
+    local blockShape = "Square"
+    local blockSize = 14
+    local followBlock = nil
+    local followConn = nil
+    local tpDistance = 50
+
+    local function makeBlock(cf)
+        local part
+        if blockShape == "Round" then
+            part = Instance.new("Part")
+            part.Shape = Enum.PartType.Cylinder
+            part.Size = Vector3.new(1, blockSize, blockSize)
+            part.CFrame = cf * CFrame.Angles(0, 0, math.rad(90))
+        elseif blockShape == "Triangle" then
+            part = Instance.new("WedgePart")
+            part.Size = Vector3.new(blockSize, blockSize * 0.6, blockSize)
+            part.CFrame = cf
+        else
+            part = Instance.new("Part")
+            part.Shape = Enum.PartType.Block
+            part.Size = Vector3.new(blockSize, 1, blockSize)
+            part.CFrame = cf
+        end
+        part.Anchored = true
+        part.CanCollide = true
+        part.Material = Enum.Material.Neon
+        part.Color = Color3.fromRGB(0, 170, 255)
+        part.Transparency = 0.25
+        part:SetAttribute("NXBlock", true)
+        part.Parent = Workspace
+        return part
+    end
+
+    BlocksTab:CreateSection("Place (Client-Side Only)")
+
+    BlocksTab:CreateDropdown({
+        Name = "Block Shape",
+        Options = { "Square", "Round", "Triangle" },
+        CurrentOption = { "Square" },
+        Callback = function(opt)
+            if type(opt) == "table" then blockShape = opt[1] else blockShape = opt end
+        end,
+    })
+
+    BlocksTab:CreateSlider({
+        Name = "Block Size",
+        Range = { 4, 60 },
+        Increment = 1,
+        Suffix = "studs",
+        CurrentValue = 14,
+        Callback = function(v) blockSize = v end,
+    })
+
+    BlocksTab:CreateButton({
+        Name = "Place Block Under Me",
+        Callback = function()
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            local b = makeBlock(CFrame.new(hrp.Position - Vector3.new(0, 3.5, 0)))
+            table.insert(placedBlocks, b)
+        end,
+    })
+
+    BlocksTab:CreateButton({
+        Name = "Place Block In Front",
+        Callback = function()
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            local b = makeBlock(hrp.CFrame * CFrame.new(0, -1, -blockSize))
+            table.insert(placedBlocks, b)
+        end,
+    })
+
+    BlocksTab:CreateButton({
+        Name = "Clear All My Blocks",
+        Callback = function()
+            local n = 0
+            for _, b in ipairs(placedBlocks) do
+                if b and b.Parent then b:Destroy() n = n + 1 end
+            end
+            placedBlocks = {}
+            for _, obj in ipairs(Workspace:GetChildren()) do
+                if obj:GetAttribute("NXBlock") then obj:Destroy() end
+            end
+            Rayfield:Notify({ Title = "Cleared", Content = n .. " block(s) removed.", Duration = 3, Image = "trash-2" })
+        end,
+    })
+
+    BlocksTab:CreateSection("Follow Platform (Climb)")
+
+    BlocksTab:CreateToggle({
+        Name = "Follow Platform Under Me",
+        CurrentValue = false,
+        Callback = function(Value)
+            if Value then
+                followBlock = Instance.new("Part")
+                followBlock.Anchored = true
+                followBlock.CanCollide = true
+                followBlock.Size = Vector3.new(blockSize, 1, blockSize)
+                followBlock.Material = Enum.Material.Neon
+                followBlock.Color = Color3.fromRGB(0, 255, 140)
+                followBlock.Transparency = 0.3
+                followBlock:SetAttribute("NXBlock", true)
+                followBlock.Parent = Workspace
+                followConn = game:GetService("RunService").Heartbeat:Connect(function()
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp and followBlock then
+                        followBlock.CFrame = CFrame.new(hrp.Position - Vector3.new(0, 3.2, 0))
+                    end
+                end)
+                Rayfield:Notify({ Title = "Follow Platform ON", Content = "A platform stays under you - jump to climb as high as you want.", Duration = 5, Image = "arrow-up" })
+            else
+                if followConn then followConn:Disconnect() followConn = nil end
+                if followBlock then followBlock:Destroy() followBlock = nil end
+            end
+        end,
+    })
+
+    BlocksTab:CreateSection("Directional Teleport")
+
+    BlocksTab:CreateInput({
+        Name = "Teleport Distance",
+        PlaceholderText = "50",
+        RemoveTextAfterFocusLost = false,
+        Callback = function(text)
+            local cleaned = (text or ""):gsub("%s+", "")
+            local n = tonumber(cleaned)
+            if n then tpDistance = n end
+        end,
+    })
+
+    local function tpMove(getOffset)
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        hrp.CFrame = hrp.CFrame + getOffset()
+        hrp.AssemblyLinearVelocity = Vector3.zero
+    end
+
+    local function flatLook()
+        local cam = Workspace.CurrentCamera
+        local lv = cam and cam.CFrame.LookVector or Vector3.new(0, 0, -1)
+        local flat = Vector3.new(lv.X, 0, lv.Z)
+        if flat.Magnitude < 0.001 then return Vector3.new(0, 0, -1) end
+        return flat.Unit
+    end
+
+    local function rightVec()
+        local f = flatLook()
+        return Vector3.new(f.Z, 0, -f.X)
+    end
+
+    BlocksTab:CreateButton({ Name = "Teleport Up", Callback = function() tpMove(function() return Vector3.new(0, tpDistance, 0) end) end })
+    BlocksTab:CreateButton({ Name = "Teleport Down", Callback = function() tpMove(function() return Vector3.new(0, -tpDistance, 0) end) end })
+    BlocksTab:CreateButton({ Name = "Teleport Forward", Callback = function() tpMove(function() return flatLook() * tpDistance end) end })
+    BlocksTab:CreateButton({ Name = "Teleport Back", Callback = function() tpMove(function() return flatLook() * -tpDistance end) end })
+    BlocksTab:CreateButton({ Name = "Teleport Right", Callback = function() tpMove(function() return rightVec() * tpDistance end) end })
+    BlocksTab:CreateButton({ Name = "Teleport Left", Callback = function() tpMove(function() return rightVec() * -tpDistance end) end })
+    BlocksTab:CreateButton({ Name = "Diagonal Forward-Right", Callback = function() tpMove(function() return (flatLook() + rightVec()).Unit * tpDistance end) end })
+    BlocksTab:CreateButton({ Name = "Diagonal Forward-Left", Callback = function() tpMove(function() return (flatLook() - rightVec()).Unit * tpDistance end) end })
+    BlocksTab:CreateButton({ Name = "Diagonal Back-Right", Callback = function() tpMove(function() return (-flatLook() + rightVec()).Unit * tpDistance end) end })
+    BlocksTab:CreateButton({ Name = "Diagonal Back-Left", Callback = function() tpMove(function() return (-flatLook() - rightVec()).Unit * tpDistance end) end })
 end
 
 Rayfield:Notify({
