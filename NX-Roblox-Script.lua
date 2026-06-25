@@ -738,6 +738,7 @@ local WavesTab = Window:CreateTab("Waves", "waves")
 local TeleportTab = Window:CreateTab("Teleport V2", "map-pin")
 local MiscTab = Window:CreateTab("Misc", "settings")
 local BlocksTab = Window:CreateTab("Blocks", "box")
+local BotTab = Window:CreateTab("Bot", "user-plus")
 
 local MM2_PLACE_IDS = {
     [142823291] = true,
@@ -922,42 +923,6 @@ do
         end,
     })
 end
-
-local GodPositionToggle = MainTab:CreateToggle({
-    Name = "God Position (Sky Lock - 1M Studs Up)",
-    CurrentValue = false,
-    Callback = function(Value)
-        godPositionEnabled = Value
-        if Value then
-            startGodPosition()
-            Rayfield:Notify({
-                Title = "Sky Lock ON",
-                Content = "Pulled 1M studs up. Toggle off to return safely.",
-                Duration = 4,
-                Image = "shield",
-            })
-        else
-            stopGodPosition()
-            Rayfield:Notify({
-                Title = "Sky Lock OFF",
-                Content = "Returned to last safe position.",
-                Duration = 3,
-                Image = "shield-off",
-            })
-        end
-    end,
-})
-
-MainTab:CreateSlider({
-    Name = "God Position Height",
-    Range = {1000, 10000000},
-    Increment = 1000,
-    Suffix = "studs",
-    CurrentValue = 1000000,
-    Callback = function(Value)
-        godPositionHeight = Value
-    end,
-})
 
 local AntiVoidToggle = MainTab:CreateToggle({
     Name = "Anti-Void (Auto-Save Position)",
@@ -4388,10 +4353,19 @@ do
                     local char = LocalPlayer.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if hrp and followBlock then
-                        followBlock.CFrame = CFrame.new(hrp.Position - Vector3.new(0, 3.2, 0))
+                        local vy = hrp.AssemblyLinearVelocity.Y
+                        local desiredCenterY = (hrp.Position.Y - 3.2) - (followBlock.Size.Y / 2) - 0.2
+                        local curY = followBlock.Position.Y
+                        local newY
+                        if vy > 1 then
+                            newY = math.min(curY, desiredCenterY)
+                        else
+                            newY = desiredCenterY
+                        end
+                        followBlock.CFrame = CFrame.new(hrp.Position.X, newY, hrp.Position.Z)
                     end
                 end)
-                Rayfield:Notify({ Title = "Follow Platform ON", Content = "A platform stays under you - jump to climb as high as you want.", Duration = 5, Image = "arrow-up" })
+                Rayfield:Notify({ Title = "Follow Platform ON", Content = "Stays under your feet as you walk; jump normally - it won't launch you up.", Duration = 5, Image = "square" })
             else
                 if followConn then followConn:Disconnect() followConn = nil end
                 if followBlock then followBlock:Destroy() followBlock = nil end
@@ -4443,6 +4417,151 @@ do
     BlocksTab:CreateButton({ Name = "Diagonal Forward-Left", Callback = function() tpMove(function() return (flatLook() - rightVec()).Unit * tpDistance end) end })
     BlocksTab:CreateButton({ Name = "Diagonal Back-Right", Callback = function() tpMove(function() return (-flatLook() + rightVec()).Unit * tpDistance end) end })
     BlocksTab:CreateButton({ Name = "Diagonal Back-Left", Callback = function() tpMove(function() return (-flatLook() - rightVec()).Unit * tpDistance end) end })
+end
+
+do
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local botModel = nil
+    local botFollow = false
+    local botFollowConn = nil
+    local botName = "Bot"
+    local botCopyUser = ""
+
+    local function removeBot()
+        botFollow = false
+        if botFollowConn then
+            pcall(function() botFollowConn:Disconnect() end)
+            botFollowConn = nil
+        end
+        if botModel then
+            pcall(function() botModel:Destroy() end)
+            botModel = nil
+        end
+    end
+
+    BotTab:CreateSection("Local Bot (Client-Side Only)")
+
+    BotTab:CreateInput({
+        Name = "Bot Name (overhead)",
+        PlaceholderText = "Bot",
+        RemoveTextAfterFocusLost = false,
+        Callback = function(text)
+            botName = (text and text ~= "") and text or "Bot"
+        end,
+    })
+
+    BotTab:CreateInput({
+        Name = "Copy Username (empty = Noob)",
+        PlaceholderText = "Roblox username",
+        RemoveTextAfterFocusLost = false,
+        Callback = function(text)
+            botCopyUser = text or ""
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "Spawn Bot",
+        Callback = function()
+            task.spawn(function()
+                removeBot()
+                local desc = nil
+                local uname = (botCopyUser or ""):gsub("%s+", "")
+                if uname ~= "" then
+                    local okId, uid = pcall(function() return Players:GetUserIdFromNameAsync(uname) end)
+                    if okId and uid then
+                        local okDesc, d = pcall(function() return Players:GetHumanoidDescriptionFromUserId(uid) end)
+                        if okDesc then desc = d end
+                    else
+                        Rayfield:Notify({ Title = "User Not Found", Content = "Couldn't find that username. Spawning a Noob instead.", Duration = 5, Image = "alert-triangle" })
+                    end
+                end
+
+                local model = nil
+                if desc then
+                    local okM, m = pcall(function() return Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15) end)
+                    if okM then model = m end
+                end
+                if not model then
+                    local okN, m = pcall(function() return Players:CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), Enum.HumanoidRigType.R6) end)
+                    if okN then model = m end
+                end
+                if not model then
+                    Rayfield:Notify({ Title = "Spawn Failed", Content = "Couldn't create the bot model here.", Duration = 5, Image = "x-circle" })
+                    return
+                end
+
+                local hum = model:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    pcall(function() hum.DisplayName = botName end)
+                end
+                model.Name = botName
+
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    pcall(function() model:PivotTo(hrp.CFrame * CFrame.new(4, 0, 0)) end)
+                end
+                model.Parent = Workspace
+                botModel = model
+                Rayfield:Notify({ Title = "Bot Spawned", Content = "Only you can see this bot. It won't appear for others.", Duration = 5, Image = "user-check" })
+            end)
+        end,
+    })
+
+    BotTab:CreateToggle({
+        Name = "Follow Me",
+        CurrentValue = false,
+        Callback = function(Value)
+            botFollow = Value
+            if Value then
+                if botFollowConn then pcall(function() botFollowConn:Disconnect() end) end
+                botFollowConn = RunService.Heartbeat:Connect(function()
+                    if not botFollow or not botModel then return end
+                    local hum = botModel:FindFirstChildOfClass("Humanoid")
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hum and hrp then
+                        pcall(function() hum:MoveTo(hrp.Position) end)
+                    end
+                end)
+            else
+                if botFollowConn then
+                    pcall(function() botFollowConn:Disconnect() end)
+                    botFollowConn = nil
+                end
+            end
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "Jump",
+        Callback = function()
+            if botModel then
+                local hum = botModel:FindFirstChildOfClass("Humanoid")
+                if hum then pcall(function() hum.Jump = true end) end
+            end
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "Bring Bot To Me",
+        Callback = function()
+            if botModel then
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then pcall(function() botModel:PivotTo(hrp.CFrame * CFrame.new(4, 0, 0)) end) end
+            end
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "Remove Bot",
+        Callback = function()
+            removeBot()
+            Rayfield:Notify({ Title = "Bot Removed", Content = "Your local bot is gone.", Duration = 3, Image = "user-x" })
+        end,
+    })
 end
 
 Rayfield:Notify({
