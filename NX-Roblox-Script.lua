@@ -1534,7 +1534,10 @@ local BhopToggle = MovementTab:CreateToggle({
     end,
 })
 
-local function startAutoSpin()
+do
+local autoSpinRespawnConn = nil
+
+local function applyAutoSpinToCharacter()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1555,7 +1558,27 @@ local function startAutoSpin()
     autoSpinBAV.Parent = hrp
 end
 
+local function startAutoSpin()
+    applyAutoSpinToCharacter()
+    if autoSpinRespawnConn then
+        pcall(function() autoSpinRespawnConn:Disconnect() end)
+    end
+    autoSpinRespawnConn = LocalPlayer.CharacterAdded:Connect(function(char)
+        if not autoSpinEnabled then return end
+        char:WaitForChild("HumanoidRootPart", 10)
+        char:WaitForChild("Humanoid", 10)
+        task.wait(0.2)
+        if autoSpinEnabled then
+            applyAutoSpinToCharacter()
+        end
+    end)
+end
+
 local function stopAutoSpin()
+    if autoSpinRespawnConn then
+        pcall(function() autoSpinRespawnConn:Disconnect() end)
+        autoSpinRespawnConn = nil
+    end
     if autoSpinBAV then
         pcall(function() autoSpinBAV:Destroy() end)
         autoSpinBAV = nil
@@ -1593,6 +1616,66 @@ MovementTab:CreateSlider({
         end
     end,
 })
+end
+
+do
+    local antiBounceEnabled = false
+    local antiBounceRespawnConn = nil
+    local noBounceProps = PhysicalProperties.new(0.7, 0.3, 0, 1, 1)
+
+    local function applyAntiBounce()
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                pcall(function()
+                    part.CustomPhysicalProperties = noBounceProps
+                end)
+            end
+        end
+    end
+
+    MovementTab:CreateToggle({
+        Name = "Anti-Bounce (No Wall Bounce)",
+        CurrentValue = false,
+        Callback = function(Value)
+            antiBounceEnabled = Value
+            if Value then
+                applyAntiBounce()
+                if antiBounceRespawnConn then
+                    pcall(function() antiBounceRespawnConn:Disconnect() end)
+                end
+                antiBounceRespawnConn = LocalPlayer.CharacterAdded:Connect(function(char)
+                    if not antiBounceEnabled then return end
+                    char:WaitForChild("HumanoidRootPart", 10)
+                    task.wait(0.3)
+                    if antiBounceEnabled then
+                        applyAntiBounce()
+                    end
+                end)
+                Rayfield:Notify({
+                    Title = "Anti-Bounce ON",
+                    Content = "Removed elasticity - you won't bounce off walls at high speed.",
+                    Duration = 4,
+                    Image = "shield",
+                })
+            else
+                if antiBounceRespawnConn then
+                    pcall(function() antiBounceRespawnConn:Disconnect() end)
+                    antiBounceRespawnConn = nil
+                end
+                local char = LocalPlayer.Character
+                if char then
+                    for _, part in ipairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            pcall(function() part.CustomPhysicalProperties = nil end)
+                        end
+                    end
+                end
+            end
+        end,
+    })
+end
 
 local function createESP(player)
     if player == LocalPlayer then return end
