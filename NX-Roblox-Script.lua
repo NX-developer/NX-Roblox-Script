@@ -4245,6 +4245,7 @@ do
     local placedBlocks = {}
     local blockShape = "Square"
     local blockSize = 14
+    local blockColor = Color3.fromRGB(0, 170, 255)
     local followBlock = nil
     local followConn = nil
     local tpDistance = 50
@@ -4269,7 +4270,7 @@ do
         part.Anchored = true
         part.CanCollide = true
         part.Material = Enum.Material.Neon
-        part.Color = Color3.fromRGB(0, 170, 255)
+        part.Color = blockColor
         part.Transparency = 0.25
         part:SetAttribute("NXBlock", true)
         part.Parent = Workspace
@@ -4294,6 +4295,28 @@ do
         Suffix = "studs",
         CurrentValue = 14,
         Callback = function(v) blockSize = v end,
+    })
+
+    BlocksTab:CreateColorPicker({
+        Name = "Block Color",
+        Color = Color3.fromRGB(0, 170, 255),
+        Callback = function(c)
+            blockColor = c
+        end,
+    })
+
+    BlocksTab:CreateButton({
+        Name = "Recolor All My Blocks",
+        Callback = function()
+            local n = 0
+            for _, obj in ipairs(Workspace:GetChildren()) do
+                if obj:GetAttribute("NXBlock") then
+                    pcall(function() obj.Color = blockColor end)
+                    n = n + 1
+                end
+            end
+            Rayfield:Notify({ Title = "Recolored", Content = n .. " block(s) updated.", Duration = 3, Image = "palette" })
+        end,
     })
 
     BlocksTab:CreateButton({
@@ -4353,19 +4376,22 @@ do
                     local char = LocalPlayer.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if hrp and followBlock then
+                        local half = followBlock.Size.Y / 2
+                        local feetY = hrp.Position.Y - 3.0
+                        local platTop = followBlock.Position.Y + half
                         local vy = hrp.AssemblyLinearVelocity.Y
-                        local desiredCenterY = (hrp.Position.Y - 3.2) - (followBlock.Size.Y / 2) - 0.2
-                        local curY = followBlock.Position.Y
-                        local newY
-                        if vy > 1 then
-                            newY = math.min(curY, desiredCenterY)
-                        else
-                            newY = desiredCenterY
+                        local newCenterY = followBlock.Position.Y
+                        if feetY > platTop + 1.2 then
+                            if vy <= 0.2 then
+                                newCenterY = (feetY - 0.3) - half
+                            end
+                        elseif feetY < platTop - 1.2 then
+                            newCenterY = (feetY - 0.3) - half
                         end
-                        followBlock.CFrame = CFrame.new(hrp.Position.X, newY, hrp.Position.Z)
+                        followBlock.CFrame = CFrame.new(hrp.Position.X, newCenterY, hrp.Position.Z)
                     end
                 end)
-                Rayfield:Notify({ Title = "Follow Platform ON", Content = "Stays under your feet as you walk; jump normally - it won't launch you up.", Duration = 5, Image = "square" })
+                Rayfield:Notify({ Title = "Follow Platform ON", Content = "Follows you horizontally and catches you - it won't creep you upward anymore.", Duration = 5, Image = "square" })
             else
                 if followConn then followConn:Disconnect() followConn = nil end
                 if followBlock then followBlock:Destroy() followBlock = nil end
@@ -4422,25 +4448,68 @@ end
 do
     local Players = game:GetService("Players")
     local RunService = game:GetService("RunService")
-    local botModel = nil
-    local botFollow = false
-    local botFollowConn = nil
+    local bots = {}
     local botName = "Bot"
     local botCopyUser = ""
+    local botFollow = false
+    local botAttack = false
+    local botFollowConn = nil
+    local botAttackConn = nil
 
-    local function removeBot()
-        botFollow = false
-        if botFollowConn then
-            pcall(function() botFollowConn:Disconnect() end)
-            botFollowConn = nil
-        end
-        if botModel then
-            pcall(function() botModel:Destroy() end)
-            botModel = nil
+    local function clearDeadBots()
+        for i = #bots, 1, -1 do
+            if not bots[i] or not bots[i].Parent then
+                table.remove(bots, i)
+            end
         end
     end
 
-    BotTab:CreateSection("Local Bot (Client-Side Only)")
+    local function removeAllBots()
+        botFollow = false
+        botAttack = false
+        if botFollowConn then pcall(function() botFollowConn:Disconnect() end) botFollowConn = nil end
+        if botAttackConn then pcall(function() botAttackConn:Disconnect() end) botAttackConn = nil end
+        for _, b in ipairs(bots) do
+            if b then pcall(function() b:Destroy() end) end
+        end
+        bots = {}
+    end
+
+    local function giveSword(model)
+        local hand = model:FindFirstChild("RightHand") or model:FindFirstChild("Right Arm")
+        if not hand then return end
+        if model:FindFirstChild("NXSword") then return end
+        local tool = Instance.new("Model")
+        tool.Name = "NXSword"
+        local handle = Instance.new("Part")
+        handle.Name = "Blade"
+        handle.Size = Vector3.new(0.4, 5, 0.4)
+        handle.Color = Color3.fromRGB(200, 200, 210)
+        handle.Material = Enum.Material.Metal
+        handle.CanCollide = false
+        handle.Massless = true
+        handle.Parent = tool
+        local guard = Instance.new("Part")
+        guard.Name = "Guard"
+        guard.Size = Vector3.new(1.6, 0.3, 0.3)
+        guard.Color = Color3.fromRGB(120, 90, 40)
+        guard.CanCollide = false
+        guard.Massless = true
+        guard.Parent = tool
+        local weld = Instance.new("Weld")
+        weld.Part0 = hand
+        weld.Part1 = handle
+        weld.C0 = CFrame.new(0, -2.5, 0) * CFrame.Angles(math.rad(90), 0, 0)
+        weld.Parent = handle
+        local gw = Instance.new("Weld")
+        gw.Part0 = handle
+        gw.Part1 = guard
+        gw.C0 = CFrame.new(0, -2.2, 0)
+        gw.Parent = guard
+        tool.Parent = model
+    end
+
+    BotTab:CreateSection("Local Bots (Client-Side Only)")
 
     BotTab:CreateInput({
         Name = "Bot Name (overhead)",
@@ -4461,10 +4530,10 @@ do
     })
 
     BotTab:CreateButton({
-        Name = "Spawn Bot",
+        Name = "Spawn Bot (adds another)",
         Callback = function()
             task.spawn(function()
-                removeBot()
+                clearDeadBots()
                 local desc = nil
                 local uname = (botCopyUser or ""):gsub("%s+", "")
                 if uname ~= "" then
@@ -4492,74 +4561,139 @@ do
                 end
 
                 local hum = model:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    pcall(function() hum.DisplayName = botName end)
-                end
+                if hum then pcall(function() hum.DisplayName = botName end) end
                 model.Name = botName
 
                 local char = LocalPlayer.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if hrp then
-                    pcall(function() model:PivotTo(hrp.CFrame * CFrame.new(4, 0, 0)) end)
+                    local angle = math.rad(math.random(0, 360))
+                    pcall(function() model:PivotTo(hrp.CFrame * CFrame.new(math.cos(angle) * 6, 0, math.sin(angle) * 6)) end)
                 end
                 model.Parent = Workspace
-                botModel = model
-                Rayfield:Notify({ Title = "Bot Spawned", Content = "Only you can see this bot. It won't appear for others.", Duration = 5, Image = "user-check" })
+                table.insert(bots, model)
+                Rayfield:Notify({ Title = "Bot Spawned (" .. #bots .. ")", Content = "Only you can see these bots.", Duration = 4, Image = "user-check" })
             end)
         end,
     })
 
     BotTab:CreateToggle({
-        Name = "Follow Me",
+        Name = "All Bots Follow Me",
         CurrentValue = false,
         Callback = function(Value)
             botFollow = Value
             if Value then
                 if botFollowConn then pcall(function() botFollowConn:Disconnect() end) end
                 botFollowConn = RunService.Heartbeat:Connect(function()
-                    if not botFollow or not botModel then return end
-                    local hum = botModel:FindFirstChildOfClass("Humanoid")
+                    if not botFollow then return end
                     local char = LocalPlayer.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hum and hrp then
-                        pcall(function() hum:MoveTo(hrp.Position) end)
+                    if not hrp then return end
+                    for _, b in ipairs(bots) do
+                        if b and b.Parent then
+                            local hum = b:FindFirstChildOfClass("Humanoid")
+                            if hum then pcall(function() hum:MoveTo(hrp.Position) end) end
+                        end
                     end
                 end)
             else
-                if botFollowConn then
-                    pcall(function() botFollowConn:Disconnect() end)
-                    botFollowConn = nil
+                if botFollowConn then pcall(function() botFollowConn:Disconnect() end) botFollowConn = nil end
+            end
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "Give All Bots a Sword",
+        Callback = function()
+            clearDeadBots()
+            for _, b in ipairs(bots) do
+                if b and b.Parent then pcall(function() giveSword(b) end) end
+            end
+            Rayfield:Notify({ Title = "Swords Given", Content = "Each bot now holds a sword (local visual).", Duration = 4, Image = "sword" })
+        end,
+    })
+
+    BotTab:CreateToggle({
+        Name = "Bots Attack Me (Local Test)",
+        CurrentValue = false,
+        Callback = function(Value)
+            botAttack = Value
+            if Value then
+                if botAttackConn then pcall(function() botAttackConn:Disconnect() end) end
+                botAttackConn = RunService.Heartbeat:Connect(function()
+                    if not botAttack then return end
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    local myHum = char and char:FindFirstChildOfClass("Humanoid")
+                    if not hrp or not myHum then return end
+                    for _, b in ipairs(bots) do
+                        if b and b.Parent then
+                            local hum = b:FindFirstChildOfClass("Humanoid")
+                            local bhrp = b:FindFirstChild("HumanoidRootPart")
+                            if hum and bhrp then
+                                pcall(function() hum:MoveTo(hrp.Position) end)
+                                local dist = (bhrp.Position - hrp.Position).Magnitude
+                                if dist < 6 then
+                                    local sword = b:FindFirstChild("NXSword")
+                                    local blade = sword and sword:FindFirstChild("Blade")
+                                    if blade then
+                                        local w = blade:FindFirstChildOfClass("Weld")
+                                        if w then
+                                            pcall(function()
+                                                w.C0 = CFrame.new(0, -2.5, 0) * CFrame.Angles(math.rad(20), 0, 0)
+                                                task.delay(0.12, function()
+                                                    if w and w.Parent then
+                                                        w.C0 = CFrame.new(0, -2.5, 0) * CFrame.Angles(math.rad(90), 0, 0)
+                                                    end
+                                                end)
+                                            end)
+                                        end
+                                    end
+                                    pcall(function() myHum:TakeDamage(2) end)
+                                end
+                            end
+                        end
+                    end
+                end)
+                Rayfield:Notify({ Title = "Bots Attacking", Content = "Bots swing at YOU only. Damage is local (server restores it). Others are never affected.", Duration = 6, Image = "swords" })
+            else
+                if botAttackConn then pcall(function() botAttackConn:Disconnect() end) botAttackConn = nil end
+            end
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "All Bots Jump",
+        Callback = function()
+            for _, b in ipairs(bots) do
+                if b and b.Parent then
+                    local hum = b:FindFirstChildOfClass("Humanoid")
+                    if hum then pcall(function() hum.Jump = true end) end
                 end
             end
         end,
     })
 
     BotTab:CreateButton({
-        Name = "Jump",
+        Name = "Bring All Bots To Me",
         Callback = function()
-            if botModel then
-                local hum = botModel:FindFirstChildOfClass("Humanoid")
-                if hum then pcall(function() hum.Jump = true end) end
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            for i, b in ipairs(bots) do
+                if b and b.Parent then
+                    local angle = math.rad((360 / math.max(#bots, 1)) * i)
+                    pcall(function() b:PivotTo(hrp.CFrame * CFrame.new(math.cos(angle) * 6, 0, math.sin(angle) * 6)) end)
+                end
             end
         end,
     })
 
     BotTab:CreateButton({
-        Name = "Bring Bot To Me",
+        Name = "Remove All Bots",
         Callback = function()
-            if botModel then
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp then pcall(function() botModel:PivotTo(hrp.CFrame * CFrame.new(4, 0, 0)) end) end
-            end
-        end,
-    })
-
-    BotTab:CreateButton({
-        Name = "Remove Bot",
-        Callback = function()
-            removeBot()
-            Rayfield:Notify({ Title = "Bot Removed", Content = "Your local bot is gone.", Duration = 3, Image = "user-x" })
+            removeAllBots()
+            Rayfield:Notify({ Title = "Bots Removed", Content = "All your local bots are gone.", Duration = 3, Image = "user-x" })
         end,
     })
 end
