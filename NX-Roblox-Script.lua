@@ -4696,6 +4696,135 @@ do
             Rayfield:Notify({ Title = "Bots Removed", Content = "All your local bots are gone.", Duration = 3, Image = "user-x" })
         end,
     })
+
+    BotTab:CreateSection("Control & View (First Bot)")
+
+    local function firstBot()
+        for _, b in ipairs(bots) do
+            if b and b.Parent then return b end
+        end
+        return nil
+    end
+
+    local botPOV = false
+    local botPOVConn = nil
+    BotTab:CreateToggle({
+        Name = "Bot POV Camera",
+        CurrentValue = false,
+        Callback = function(Value)
+            botPOV = Value
+            local cam = Workspace.CurrentCamera
+            if Value then
+                cam.CameraType = Enum.CameraType.Scriptable
+                if botPOVConn then pcall(function() botPOVConn:Disconnect() end) end
+                botPOVConn = RunService.RenderStepped:Connect(function()
+                    if not botPOV then return end
+                    local bot = firstBot()
+                    local head = bot and (bot:FindFirstChild("Head") or bot:FindFirstChild("HumanoidRootPart"))
+                    if head then
+                        cam.CFrame = CFrame.new(head.Position + head.CFrame.LookVector * 1.5 + Vector3.new(0, 1, 0), head.Position + head.CFrame.LookVector * 50)
+                    end
+                end)
+                Rayfield:Notify({ Title = "Bot POV ON", Content = "Seeing through the first bot's eyes.", Duration = 4, Image = "eye" })
+            else
+                if botPOVConn then pcall(function() botPOVConn:Disconnect() end) botPOVConn = nil end
+                cam.CameraType = Enum.CameraType.Custom
+                local char = LocalPlayer.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then cam.CameraSubject = hum end
+            end
+        end,
+    })
+
+    local botControl = false
+    local botControlConn = nil
+    local savedWalkSpeed = nil
+    BotTab:CreateToggle({
+        Name = "Control Bot (WASD / Joystick)",
+        CurrentValue = false,
+        Callback = function(Value)
+            botControl = Value
+            local UIS = game:GetService("UserInputService")
+            if Value then
+                local char = LocalPlayer.Character
+                local ph = char and char:FindFirstChildOfClass("Humanoid")
+                if ph then
+                    savedWalkSpeed = ph.WalkSpeed
+                    pcall(function() ph.WalkSpeed = 0 end)
+                end
+                if botControlConn then pcall(function() botControlConn:Disconnect() end) end
+                botControlConn = RunService.RenderStepped:Connect(function()
+                    if not botControl then return end
+                    local bot = firstBot()
+                    local hum = bot and bot:FindFirstChildOfClass("Humanoid")
+                    if not hum then return end
+                    local cam = Workspace.CurrentCamera
+                    local dir = Vector3.zero
+                    if UIS:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
+                    local pc = LocalPlayer.Character
+                    local pmh = pc and pc:FindFirstChildOfClass("Humanoid")
+                    if pmh and pmh.MoveDirection.Magnitude > 0 then
+                        dir = dir + pmh.MoveDirection
+                    end
+                    dir = Vector3.new(dir.X, 0, dir.Z)
+                    if dir.Magnitude > 0 then
+                        hum:Move(dir.Unit, false)
+                    else
+                        hum:Move(Vector3.zero, false)
+                    end
+                end)
+                Rayfield:Notify({ Title = "Control Bot ON", Content = "Steer the first bot with WASD or the mobile joystick. You stay put while controlling.", Duration = 6, Image = "gamepad-2" })
+            else
+                if botControlConn then pcall(function() botControlConn:Disconnect() end) botControlConn = nil end
+                local char = LocalPlayer.Character
+                local ph = char and char:FindFirstChildOfClass("Humanoid")
+                if ph and savedWalkSpeed then pcall(function() ph.WalkSpeed = savedWalkSpeed end) end
+            end
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "Bot Jump (Controlled)",
+        Callback = function()
+            local bot = firstBot()
+            local hum = bot and bot:FindFirstChildOfClass("Humanoid")
+            if hum then pcall(function() hum.Jump = true end) end
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "Teleport To Bot",
+        Callback = function()
+            local bot = firstBot()
+            local bhrp = bot and bot:FindFirstChild("HumanoidRootPart")
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if bhrp and hrp then
+                hrp.CFrame = bhrp.CFrame * CFrame.new(2, 0, 0)
+                hrp.AssemblyLinearVelocity = Vector3.zero
+            end
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "Swap Places With Bot",
+        Callback = function()
+            local bot = firstBot()
+            local bhrp = bot and bot:FindFirstChild("HumanoidRootPart")
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if bhrp and hrp then
+                local myCF = hrp.CFrame
+                local botCF = bhrp.CFrame
+                hrp.CFrame = botCF
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                pcall(function() bot:PivotTo(myCF) end)
+            end
+        end,
+    })
 end
 
 Rayfield:Notify({
