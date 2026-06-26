@@ -4573,6 +4573,40 @@ do
         tool.Parent = model
     end
 
+    local swinging = false
+    local function swingSword(model)
+        if not model then return end
+        local sword = model:FindFirstChild("NXSword")
+        local blade = sword and sword:FindFirstChild("Blade")
+        local weld = blade and blade:FindFirstChildOfClass("Weld")
+        if not weld then return end
+        if swinging then return end
+        swinging = true
+        local base = CFrame.new(0, -2.5, 0) * CFrame.Angles(math.rad(90), 0, 0)
+        pcall(function()
+            weld.C0 = CFrame.new(0, -2.5, 0) * CFrame.Angles(math.rad(-30), math.rad(-60), 0)
+        end)
+        task.delay(0.07, function()
+            pcall(function()
+                weld.C0 = CFrame.new(0, -2.5, 0) * CFrame.Angles(math.rad(120), math.rad(40), 0)
+            end)
+        end)
+        task.delay(0.2, function()
+            pcall(function() weld.C0 = base end)
+            swinging = false
+        end)
+        local bhrp = model:FindFirstChild("HumanoidRootPart")
+        local char = LocalPlayer.Character
+        local myHrp = char and char:FindFirstChild("HumanoidRootPart")
+        local myHum = char and char:FindFirstChildOfClass("Humanoid")
+        if bhrp and myHrp and myHum then
+            local dist = (bhrp.Position - myHrp.Position).Magnitude
+            if dist < 8 then
+                pcall(function() myHum:TakeDamage(3) end)
+            end
+        end
+    end
+
     BotTab:CreateSection("Local Bots (Client-Side Only)")
 
     BotTab:CreateInput({
@@ -5007,6 +5041,38 @@ do
                 if hum and not botControl then pcall(function() hum.WalkSpeed = 16 end) end
                 Rayfield:Notify({ Title = "Character Unlocked", Content = "You can move again.", Duration = 3, Image = "unlock" })
             end
+        end,
+    })
+
+    local botSwing = false
+    local botSwingConn = nil
+    BotTab:CreateToggle({
+        Name = "Bot Swings Sword on Click/Tap",
+        CurrentValue = false,
+        Callback = function(Value)
+            botSwing = Value
+            local UIS = game:GetService("UserInputService")
+            if Value then
+                if botSwingConn then pcall(function() botSwingConn:Disconnect() end) end
+                botSwingConn = UIS.InputBegan:Connect(function(input, processed)
+                    if processed then return end
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        if botSwing then
+                            swingSword(firstBot())
+                        end
+                    end
+                end)
+                Rayfield:Notify({ Title = "Sword Swing ON", Content = "Click or tap to make the controlled bot swing - even at empty air. Only hits YOU if you're close.", Duration = 7, Image = "swords" })
+            else
+                if botSwingConn then pcall(function() botSwingConn:Disconnect() end) botSwingConn = nil end
+            end
+        end,
+    })
+
+    BotTab:CreateButton({
+        Name = "Swing Sword Once",
+        Callback = function()
+            swingSword(firstBot())
         end,
     })
 
