@@ -4356,6 +4356,70 @@ do
         end,
     })
 
+    BlocksTab:CreateSection("Remove Wall (Click to Pick - Local Only)")
+
+    local hiddenWalls = {}
+    local pickingWall = false
+
+    BlocksTab:CreateButton({
+        Name = "Pick a Wall to Hide",
+        Callback = function()
+            if pickingWall then return end
+            pickingWall = true
+            Rayfield:Notify({ Title = "Click a Wall", Content = "Tap/click the wall in front of you to hide it (only for you).", Duration = 6, Image = "mouse-pointer" })
+            local UIS = game:GetService("UserInputService")
+            local conn
+            conn = UIS.InputBegan:Connect(function(input, processed)
+                if processed then return end
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    local cam = Workspace.CurrentCamera
+                    local pos = UIS:GetMouseLocation()
+                    local ray = cam:ViewportPointToRay(pos.X, pos.Y)
+                    local params = RaycastParams.new()
+                    params.FilterType = Enum.RaycastFilterType.Exclude
+                    local char = LocalPlayer.Character
+                    if char then params.FilterDescendantsInstances = { char } end
+                    local result = Workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
+                    if result and result.Instance and result.Instance:IsA("BasePart") then
+                        local part = result.Instance
+                        table.insert(hiddenWalls, {
+                            part = part,
+                            transparency = part.Transparency,
+                            canCollide = part.CanCollide,
+                        })
+                        pcall(function()
+                            part.Transparency = 1
+                            part.CanCollide = false
+                        end)
+                        Rayfield:Notify({ Title = "Wall Hidden", Content = "'" .. part.Name .. "' is now see-through and walk-through for you only.", Duration = 5, Image = "eye-off" })
+                    else
+                        Rayfield:Notify({ Title = "Nothing Hit", Content = "No part under your click. Try again.", Duration = 4, Image = "alert-triangle" })
+                    end
+                    pickingWall = false
+                    if conn then conn:Disconnect() end
+                end
+            end)
+        end,
+    })
+
+    BlocksTab:CreateButton({
+        Name = "Restore All Hidden Walls",
+        Callback = function()
+            local n = 0
+            for _, w in ipairs(hiddenWalls) do
+                if w.part and w.part.Parent then
+                    pcall(function()
+                        w.part.Transparency = w.transparency
+                        w.part.CanCollide = w.canCollide
+                    end)
+                    n = n + 1
+                end
+            end
+            hiddenWalls = {}
+            Rayfield:Notify({ Title = "Restored", Content = n .. " wall(s) brought back.", Duration = 4, Image = "eye" })
+        end,
+    })
+
     BlocksTab:CreateSection("Follow Platform (Climb)")
 
     BlocksTab:CreateToggle({
