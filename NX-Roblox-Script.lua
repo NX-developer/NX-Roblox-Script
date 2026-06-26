@@ -784,7 +784,7 @@ if placeMatches(GAG_PLACE_IDS, {"garden"}) then
     GagTab = Window:CreateTab("Grow a Garden", "sprout")
 end
 
-local GodModeToggle = MainTab:CreateToggle({
+MainTab:CreateToggle({
     Name = "God Mode (v2 - Kill Brick Resistant)",
     CurrentValue = false,
     Callback = function(Value)
@@ -924,7 +924,7 @@ do
     })
 end
 
-local AntiVoidToggle = MainTab:CreateToggle({
+MainTab:CreateToggle({
     Name = "Anti-Void (Auto-Save Position)",
     CurrentValue = false,
     Callback = function(Value)
@@ -966,7 +966,7 @@ MainTab:CreateSlider({
     end,
 })
 
-local FlyToggle = MainTab:CreateToggle({
+MainTab:CreateToggle({
     Name = "Fly (Camera-Direction, PC + Mobile)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1043,7 +1043,7 @@ local FlyToggle = MainTab:CreateToggle({
     end,
 })
 
-local NoclipToggle = MainTab:CreateToggle({
+MainTab:CreateToggle({
     Name = "NoClip",
     CurrentValue = false,
     Callback = function(Value)
@@ -1092,7 +1092,7 @@ local NoclipToggle = MainTab:CreateToggle({
 
 WavesTab:CreateSection("Main Controls")
 
-local WaveRemoveToggle = WavesTab:CreateToggle({
+WavesTab:CreateToggle({
     Name = "Remove Waves (Smart Detection)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1111,7 +1111,7 @@ local WaveRemoveToggle = WavesTab:CreateToggle({
     end,
 })
 
-local WaveAggressiveToggle = WavesTab:CreateToggle({
+WavesTab:CreateToggle({
     Name = "Aggressive Deep Scan",
     CurrentValue = false,
     Callback = function(Value)
@@ -1219,7 +1219,7 @@ WavesTab:CreateButton({
     end,
 })
 
-local AntiAfkToggle = MainTab:CreateToggle({
+MainTab:CreateToggle({
     Name = "Anti-AFK",
     CurrentValue = false,
     Callback = function(Value)
@@ -1339,7 +1339,7 @@ MovementTab:CreateSlider({
     end,
 })
 
-local WalkSpeedLockToggle = MovementTab:CreateToggle({
+MovementTab:CreateToggle({
     Name = "Lock WalkSpeed (Anti-Reset)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1374,7 +1374,7 @@ MovementTab:CreateSlider({
     end,
 })
 
-local JumpPowerLockToggle = MovementTab:CreateToggle({
+MovementTab:CreateToggle({
     Name = "Lock JumpPower (Anti-Reset)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1393,7 +1393,7 @@ local JumpPowerLockToggle = MovementTab:CreateToggle({
     end,
 })
 
-local InfJumpToggle = MovementTab:CreateToggle({
+MovementTab:CreateToggle({
     Name = "Infinite Air Jump",
     CurrentValue = false,
     Callback = function(Value)
@@ -1519,7 +1519,7 @@ local function stopAutoJump()
     end
 end
 
-local AutoWalkToggle = MovementTab:CreateToggle({
+MovementTab:CreateToggle({
     Name = "Auto Walk (Camera Direction)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1538,7 +1538,7 @@ local AutoWalkToggle = MovementTab:CreateToggle({
     end,
 })
 
-local AutoJumpToggle = MovementTab:CreateToggle({
+MovementTab:CreateToggle({
     Name = "Auto Jump",
     CurrentValue = false,
     Callback = function(Value)
@@ -1551,7 +1551,7 @@ local AutoJumpToggle = MovementTab:CreateToggle({
     end,
 })
 
-local BhopToggle = MovementTab:CreateToggle({
+MovementTab:CreateToggle({
     Name = "Bhop Combo (Auto Walk + Auto Jump)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1629,7 +1629,7 @@ local function stopAutoSpin()
     end
 end
 
-local AutoSpinToggle = MovementTab:CreateToggle({
+MovementTab:CreateToggle({
     Name = "Auto Spin (Rotate Character)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1749,7 +1749,7 @@ local function clearESP()
     table.clear(espPlayerData)
 end
 
-local EspToggle = VisualTab:CreateToggle({
+VisualTab:CreateToggle({
     Name = "Player ESP",
     CurrentValue = false,
     Callback = function(Value)
@@ -1771,7 +1771,7 @@ local EspToggle = VisualTab:CreateToggle({
     end,
 })
 
-local FullbrightToggle = VisualTab:CreateToggle({
+VisualTab:CreateToggle({
     Name = "Fullbright",
     CurrentValue = false,
     Callback = function(Value)
@@ -1816,7 +1816,7 @@ VisualTab:CreateSlider({
     end,
 })
 
-local UpsideDownToggle = VisualTab:CreateToggle({
+VisualTab:CreateToggle({
     Name = "Upside-Down Camera",
     CurrentValue = false,
     Callback = function(Value)
@@ -1847,7 +1847,7 @@ local UpsideDownToggle = VisualTab:CreateToggle({
     end,
 })
 
-local FpsToggle = VisualTab:CreateToggle({
+VisualTab:CreateToggle({
     Name = "FPS Counter",
     CurrentValue = false,
     Callback = function(Value)
@@ -1862,7 +1862,7 @@ local FpsToggle = VisualTab:CreateToggle({
     end,
 })
 
-local PingToggle = VisualTab:CreateToggle({
+VisualTab:CreateToggle({
     Name = "Ping / Lag Indicator",
     CurrentValue = false,
     Callback = function(Value)
@@ -1877,7 +1877,7 @@ local PingToggle = VisualTab:CreateToggle({
     end,
 })
 
-local KeyStrokesToggle = VisualTab:CreateToggle({
+VisualTab:CreateToggle({
     Name = "KeyStrokes Overlay (PC + Mobile)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1897,7 +1897,7 @@ local KeyStrokesToggle = VisualTab:CreateToggle({
     end,
 })
 
-local RepositionHudToggle = VisualTab:CreateToggle({
+VisualTab:CreateToggle({
     Name = "Reposition HUD (Drag FPS / Ping / Keys)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1938,7 +1938,7 @@ VisualTab:CreateButton({
     end,
 })
 
-local AimbotToggle = CombatTab:CreateToggle({
+CombatTab:CreateToggle({
     Name = "Aimbot (Wall-Check)",
     CurrentValue = false,
     Callback = function(Value)
@@ -1959,7 +1959,7 @@ local AimbotToggle = CombatTab:CreateToggle({
     end,
 })
 
-local HitboxToggle = CombatTab:CreateToggle({
+CombatTab:CreateToggle({
     Name = "Hitbox (Red Glow)",
     CurrentValue = false,
     Callback = function(Value)
@@ -2006,7 +2006,7 @@ local HitboxToggle = CombatTab:CreateToggle({
     end,
 })
 
-local CamLockToggle = CombatTab:CreateToggle({
+CombatTab:CreateToggle({
     Name = "Camera Lock",
     CurrentValue = false,
     Callback = function(Value)
@@ -2021,7 +2021,7 @@ local CamLockToggle = CombatTab:CreateToggle({
     end,
 })
 
-local SlotDropdown = TeleportTab:CreateDropdown({
+TeleportTab:CreateDropdown({
     Name = "Select Slot",
     Options = {"Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5"},
     CurrentOption = {"Slot 1"},
@@ -2146,7 +2146,7 @@ local function getPlayerNameList()
     return names
 end
 
-local PlayerTpDropdown = TeleportTab:CreateDropdown({
+TeleportTab:CreateDropdown({
     Name = "Select Player",
     Options = getPlayerNameList(),
     CurrentOption = {},
@@ -2249,7 +2249,7 @@ local function teleportToScreenPos(screenX, screenY)
     return false
 end
 
-local ClickTpToggle = TeleportTab:CreateToggle({
+TeleportTab:CreateToggle({
     Name = "Click Teleport (PC: T or RClick / Mobile: Tap)",
     CurrentValue = false,
     Callback = function(Value)
@@ -4708,26 +4708,70 @@ do
 
     local botPOV = false
     local botPOVConn = nil
+    local botPOVYaw = 0
+    local botPOVPitch = 0
+    local botPOVTouchBegan = nil
+    local botPOVTouchMoved = nil
+    local botPOVTouchEnded = nil
+    local botPOVDrag = nil
+    local botPOVLast = nil
     BotTab:CreateToggle({
         Name = "Bot POV Camera",
         CurrentValue = false,
         Callback = function(Value)
             botPOV = Value
             local cam = Workspace.CurrentCamera
+            local UIS = game:GetService("UserInputService")
             if Value then
                 cam.CameraType = Enum.CameraType.Scriptable
+                botPOVYaw = 0
+                botPOVPitch = 0
+                botPOVDrag = nil
+                botPOVLast = nil
+
+                botPOVTouchBegan = UIS.TouchStarted:Connect(function(touch, processed)
+                    if processed then return end
+                    if touch.Position.X > cam.ViewportSize.X * 0.35 then
+                        botPOVDrag = touch
+                        botPOVLast = touch.Position
+                    end
+                end)
+                botPOVTouchMoved = UIS.TouchMoved:Connect(function(touch, processed)
+                    if botPOVDrag == touch and botPOVLast then
+                        local delta = touch.Position - botPOVLast
+                        botPOVLast = touch.Position
+                        botPOVYaw = botPOVYaw - delta.X * 0.4
+                        botPOVPitch = math.clamp(botPOVPitch - delta.Y * 0.4, -80, 80)
+                    end
+                end)
+                botPOVTouchEnded = UIS.TouchEnded:Connect(function(touch)
+                    if botPOVDrag == touch then botPOVDrag = nil botPOVLast = nil end
+                end)
+
                 if botPOVConn then pcall(function() botPOVConn:Disconnect() end) end
                 botPOVConn = RunService.RenderStepped:Connect(function()
                     if not botPOV then return end
+                    if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                        local md = UIS:GetMouseDelta()
+                        botPOVYaw = botPOVYaw - md.X * 0.3
+                        botPOVPitch = math.clamp(botPOVPitch - md.Y * 0.3, -80, 80)
+                    end
                     local bot = firstBot()
                     local head = bot and (bot:FindFirstChild("Head") or bot:FindFirstChild("HumanoidRootPart"))
                     if head then
-                        cam.CFrame = CFrame.new(head.Position + head.CFrame.LookVector * 1.5 + Vector3.new(0, 1, 0), head.Position + head.CFrame.LookVector * 50)
+                        local baseLook = head.CFrame.LookVector
+                        local baseYaw = math.atan2(-baseLook.X, -baseLook.Z)
+                        local rot = CFrame.Angles(0, baseYaw + math.rad(botPOVYaw), 0) * CFrame.Angles(math.rad(botPOVPitch), 0, 0)
+                        local eye = head.Position + Vector3.new(0, 1, 0) + (rot.LookVector * 1.2)
+                        cam.CFrame = CFrame.new(eye) * rot
                     end
                 end)
-                Rayfield:Notify({ Title = "Bot POV ON", Content = "Seeing through the first bot's eyes.", Duration = 4, Image = "eye" })
+                Rayfield:Notify({ Title = "Bot POV ON", Content = "Mobile: drag the right side of the screen to look around. PC: right-mouse to look.", Duration = 6, Image = "eye" })
             else
                 if botPOVConn then pcall(function() botPOVConn:Disconnect() end) botPOVConn = nil end
+                if botPOVTouchBegan then pcall(function() botPOVTouchBegan:Disconnect() end) botPOVTouchBegan = nil end
+                if botPOVTouchMoved then pcall(function() botPOVTouchMoved:Disconnect() end) botPOVTouchMoved = nil end
+                if botPOVTouchEnded then pcall(function() botPOVTouchEnded:Disconnect() end) botPOVTouchEnded = nil end
                 cam.CameraType = Enum.CameraType.Custom
                 local char = LocalPlayer.Character
                 local hum = char and char:FindFirstChildOfClass("Humanoid")
