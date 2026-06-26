@@ -4930,7 +4930,9 @@ do
 
     local botControl = false
     local botControlConn = nil
+    local botJumpConn = nil
     local savedWalkSpeed = nil
+    local savedAnchor = nil
     BotTab:CreateToggle({
         Name = "Control Bot (WASD / Joystick)",
         CurrentValue = false,
@@ -4944,6 +4946,13 @@ do
                     savedWalkSpeed = ph.WalkSpeed
                     pcall(function() ph.WalkSpeed = 0 end)
                 end
+                if botJumpConn then pcall(function() botJumpConn:Disconnect() end) end
+                botJumpConn = UIS.JumpRequest:Connect(function()
+                    if not botControl then return end
+                    local bot = firstBot()
+                    local hum = bot and bot:FindFirstChildOfClass("Humanoid")
+                    if hum then pcall(function() hum.Jump = true end) end
+                end)
                 if botControlConn then pcall(function() botControlConn:Disconnect() end) end
                 botControlConn = RunService.RenderStepped:Connect(function()
                     if not botControl then return end
@@ -4968,12 +4977,35 @@ do
                         hum:Move(Vector3.zero, false)
                     end
                 end)
-                Rayfield:Notify({ Title = "Control Bot ON", Content = "Steer the first bot with WASD or the mobile joystick. You stay put while controlling.", Duration = 6, Image = "gamepad-2" })
+                Rayfield:Notify({ Title = "Control Bot ON", Content = "Steer with WASD/joystick. Press Jump (Space or the mobile jump button) and the BOT jumps.", Duration = 7, Image = "gamepad-2" })
             else
                 if botControlConn then pcall(function() botControlConn:Disconnect() end) botControlConn = nil end
+                if botJumpConn then pcall(function() botJumpConn:Disconnect() end) botJumpConn = nil end
                 local char = LocalPlayer.Character
                 local ph = char and char:FindFirstChildOfClass("Humanoid")
                 if ph and savedWalkSpeed then pcall(function() ph.WalkSpeed = savedWalkSpeed end) end
+            end
+        end,
+    })
+
+    BotTab:CreateToggle({
+        Name = "Lock My Character (While Using Bot)",
+        CurrentValue = false,
+        Callback = function(Value)
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if Value then
+                if hrp then
+                    savedAnchor = hrp.Anchored
+                    pcall(function() hrp.Anchored = true end)
+                end
+                if hum then pcall(function() hum.WalkSpeed = 0 end) end
+                Rayfield:Notify({ Title = "Character Locked", Content = "You stay frozen in place while you view or drive the bot.", Duration = 5, Image = "lock" })
+            else
+                if hrp and savedAnchor ~= nil then pcall(function() hrp.Anchored = savedAnchor end) end
+                if hum and not botControl then pcall(function() hum.WalkSpeed = 16 end) end
+                Rayfield:Notify({ Title = "Character Unlocked", Content = "You can move again.", Duration = 3, Image = "unlock" })
             end
         end,
     })
