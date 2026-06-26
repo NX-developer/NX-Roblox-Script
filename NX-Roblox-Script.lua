@@ -4825,6 +4825,74 @@ do
             end
         end,
     })
+
+    BotTab:CreateSection("Free Camera (View From Outside)")
+
+    local freeCam = false
+    local freeCamConn = nil
+    local freeCamPos = Vector3.zero
+    local freeCamYaw = 0
+    local freeCamPitch = 0
+    local freeCamSpeed = 60
+    local UIS = game:GetService("UserInputService")
+
+    BotTab:CreateSlider({
+        Name = "Free Camera Speed",
+        Range = { 10, 300 },
+        Increment = 5,
+        Suffix = "studs/s",
+        CurrentValue = 60,
+        Callback = function(v) freeCamSpeed = v end,
+    })
+
+    BotTab:CreateToggle({
+        Name = "Free Camera (Detach & Fly)",
+        CurrentValue = false,
+        Callback = function(Value)
+            freeCam = Value
+            local cam = Workspace.CurrentCamera
+            if Value then
+                cam.CameraType = Enum.CameraType.Scriptable
+                freeCamPos = cam.CFrame.Position
+                local look = cam.CFrame.LookVector
+                freeCamYaw = math.deg(math.atan2(-look.X, -look.Z))
+                freeCamPitch = math.deg(math.asin(math.clamp(look.Y, -1, 1)))
+                if freeCamConn then pcall(function() freeCamConn:Disconnect() end) end
+                freeCamConn = RunService.RenderStepped:Connect(function(dt)
+                    if not freeCam then return end
+                    if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                        local md = UIS:GetMouseDelta()
+                        freeCamYaw = freeCamYaw - md.X * 0.3
+                        freeCamPitch = math.clamp(freeCamPitch - md.Y * 0.3, -89, 89)
+                    end
+                    local rot = CFrame.Angles(0, math.rad(freeCamYaw), 0) * CFrame.Angles(math.rad(freeCamPitch), 0, 0)
+                    local move = Vector3.zero
+                    if UIS:IsKeyDown(Enum.KeyCode.W) then move = move + Vector3.new(0, 0, -1) end
+                    if UIS:IsKeyDown(Enum.KeyCode.S) then move = move + Vector3.new(0, 0, 1) end
+                    if UIS:IsKeyDown(Enum.KeyCode.A) then move = move + Vector3.new(-1, 0, 0) end
+                    if UIS:IsKeyDown(Enum.KeyCode.D) then move = move + Vector3.new(1, 0, 0) end
+                    if UIS:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+                    if UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.LeftShift) then move = move + Vector3.new(0, -1, 0) end
+                    local pc = LocalPlayer.Character
+                    local ph = pc and pc:FindFirstChildOfClass("Humanoid")
+                    if ph and ph.MoveDirection.Magnitude > 0 then
+                        move = move + rot:VectorToObjectSpace(ph.MoveDirection)
+                    end
+                    if move.Magnitude > 0 then
+                        freeCamPos = freeCamPos + rot:VectorToWorldSpace(move.Unit) * freeCamSpeed * dt
+                    end
+                    cam.CFrame = CFrame.new(freeCamPos) * rot
+                end)
+                Rayfield:Notify({ Title = "Free Camera ON", Content = "PC: WASD + hold right-mouse to look, Space/Shift up-down. Mobile: joystick moves it. Your character stays put.", Duration = 8, Image = "video" })
+            else
+                if freeCamConn then pcall(function() freeCamConn:Disconnect() end) freeCamConn = nil end
+                cam.CameraType = Enum.CameraType.Custom
+                local char = LocalPlayer.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then cam.CameraSubject = hum end
+            end
+        end,
+    })
 end
 
 Rayfield:Notify({
