@@ -4780,6 +4780,90 @@ do
         end,
     })
 
+    local botTPS = false
+    local botTPSConn = nil
+    local botTPSDist = 12
+    local botTPSYaw = 0
+    local botTPSPitch = 20
+    local botTPSTouchBegan = nil
+    local botTPSTouchMoved = nil
+    local botTPSTouchEnded = nil
+    local botTPSDrag = nil
+    local botTPSLast = nil
+
+    BotTab:CreateSlider({
+        Name = "Third-Person Distance",
+        Range = { 5, 40 },
+        Increment = 1,
+        Suffix = "studs",
+        CurrentValue = 12,
+        Callback = function(v) botTPSDist = v end,
+    })
+
+    BotTab:CreateToggle({
+        Name = "Bot Third-Person Camera",
+        CurrentValue = false,
+        Callback = function(Value)
+            botTPS = Value
+            local cam = Workspace.CurrentCamera
+            local UIS = game:GetService("UserInputService")
+            if Value then
+                cam.CameraType = Enum.CameraType.Scriptable
+                botTPSYaw = 0
+                botTPSPitch = 20
+                botTPSDrag = nil
+                botTPSLast = nil
+
+                botTPSTouchBegan = UIS.TouchStarted:Connect(function(touch, processed)
+                    if processed then return end
+                    if touch.Position.X > cam.ViewportSize.X * 0.35 then
+                        botTPSDrag = touch
+                        botTPSLast = touch.Position
+                    end
+                end)
+                botTPSTouchMoved = UIS.TouchMoved:Connect(function(touch, processed)
+                    if botTPSDrag == touch and botTPSLast then
+                        local delta = touch.Position - botTPSLast
+                        botTPSLast = touch.Position
+                        botTPSYaw = botTPSYaw - delta.X * 0.4
+                        botTPSPitch = math.clamp(botTPSPitch - delta.Y * 0.4, -75, 80)
+                    end
+                end)
+                botTPSTouchEnded = UIS.TouchEnded:Connect(function(touch)
+                    if botTPSDrag == touch then botTPSDrag = nil botTPSLast = nil end
+                end)
+
+                if botTPSConn then pcall(function() botTPSConn:Disconnect() end) end
+                botTPSConn = RunService.RenderStepped:Connect(function()
+                    if not botTPS then return end
+                    if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                        local md = UIS:GetMouseDelta()
+                        botTPSYaw = botTPSYaw - md.X * 0.3
+                        botTPSPitch = math.clamp(botTPSPitch - md.Y * 0.3, -75, 80)
+                    end
+                    local bot = firstBot()
+                    local hrp = bot and (bot:FindFirstChild("HumanoidRootPart") or bot:FindFirstChild("Head"))
+                    if hrp then
+                        local focus = hrp.Position + Vector3.new(0, 2, 0)
+                        local rot = CFrame.Angles(0, math.rad(botTPSYaw), 0) * CFrame.Angles(math.rad(-botTPSPitch), 0, 0)
+                        local offset = rot:VectorToWorldSpace(Vector3.new(0, 0, botTPSDist))
+                        cam.CFrame = CFrame.new(focus + offset, focus)
+                    end
+                end)
+                Rayfield:Notify({ Title = "Bot Third-Person ON", Content = "Watching the bot from behind. Mobile: drag the right side to orbit. PC: right-mouse to orbit.", Duration = 6, Image = "video" })
+            else
+                if botTPSConn then pcall(function() botTPSConn:Disconnect() end) botTPSConn = nil end
+                if botTPSTouchBegan then pcall(function() botTPSTouchBegan:Disconnect() end) botTPSTouchBegan = nil end
+                if botTPSTouchMoved then pcall(function() botTPSTouchMoved:Disconnect() end) botTPSTouchMoved = nil end
+                if botTPSTouchEnded then pcall(function() botTPSTouchEnded:Disconnect() end) botTPSTouchEnded = nil end
+                cam.CameraType = Enum.CameraType.Custom
+                local char = LocalPlayer.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then cam.CameraSubject = hum end
+            end
+        end,
+    })
+
     local botControl = false
     local botControlConn = nil
     local savedWalkSpeed = nil
