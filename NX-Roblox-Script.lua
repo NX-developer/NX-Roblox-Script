@@ -4830,10 +4830,18 @@ do
 
     local freeCam = false
     local freeCamConn = nil
+    local freeCamTouchBegan = nil
+    local freeCamTouchChanged = nil
+    local freeCamTouchEnded = nil
     local freeCamPos = Vector3.zero
     local freeCamYaw = 0
     local freeCamPitch = 0
     local freeCamSpeed = 60
+    local freeCamLockChar = false
+    local freeCamSavedWS = nil
+    local freeCamSavedAnchor = nil
+    local freeCamDragId = nil
+    local freeCamLastTouch = nil
     local UIS = game:GetService("UserInputService")
 
     BotTab:CreateSlider({
@@ -4843,6 +4851,31 @@ do
         Suffix = "studs/s",
         CurrentValue = 60,
         Callback = function(v) freeCamSpeed = v end,
+    })
+
+    BotTab:CreateToggle({
+        Name = "Lock Character In Place",
+        CurrentValue = false,
+        Callback = function(Value)
+            freeCamLockChar = Value
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if Value then
+                if hum then
+                    freeCamSavedWS = hum.WalkSpeed
+                    pcall(function() hum.WalkSpeed = 0 end)
+                end
+                if hrp then
+                    freeCamSavedAnchor = hrp.Anchored
+                    pcall(function() hrp.Anchored = true end)
+                end
+                Rayfield:Notify({ Title = "Character Locked", Content = "You stay put. Only the camera moves.", Duration = 4, Image = "lock" })
+            else
+                if hum and freeCamSavedWS then pcall(function() hum.WalkSpeed = freeCamSavedWS end) end
+                if hrp and freeCamSavedAnchor ~= nil then pcall(function() hrp.Anchored = freeCamSavedAnchor end) end
+            end
+        end,
     })
 
     BotTab:CreateToggle({
@@ -4857,6 +4890,31 @@ do
                 local look = cam.CFrame.LookVector
                 freeCamYaw = math.deg(math.atan2(-look.X, -look.Z))
                 freeCamPitch = math.deg(math.asin(math.clamp(look.Y, -1, 1)))
+
+                freeCamDragId = nil
+                freeCamLastTouch = nil
+                freeCamTouchBegan = UIS.TouchStarted:Connect(function(touch, processed)
+                    if processed then return end
+                    if touch.Position.X > Workspace.CurrentCamera.ViewportSize.X * 0.35 then
+                        freeCamDragId = touch
+                        freeCamLastTouch = touch.Position
+                    end
+                end)
+                freeCamTouchChanged = UIS.TouchMoved:Connect(function(touch, processed)
+                    if freeCamDragId == touch and freeCamLastTouch then
+                        local delta = touch.Position - freeCamLastTouch
+                        freeCamLastTouch = touch.Position
+                        freeCamYaw = freeCamYaw - delta.X * 0.4
+                        freeCamPitch = math.clamp(freeCamPitch - delta.Y * 0.4, -89, 89)
+                    end
+                end)
+                freeCamTouchEnded = UIS.TouchEnded:Connect(function(touch)
+                    if freeCamDragId == touch then
+                        freeCamDragId = nil
+                        freeCamLastTouch = nil
+                    end
+                end)
+
                 if freeCamConn then pcall(function() freeCamConn:Disconnect() end) end
                 freeCamConn = RunService.RenderStepped:Connect(function(dt)
                     if not freeCam then return end
@@ -4873,19 +4931,30 @@ do
                     if UIS:IsKeyDown(Enum.KeyCode.D) then move = move + Vector3.new(1, 0, 0) end
                     if UIS:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
                     if UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.LeftShift) then move = move + Vector3.new(0, -1, 0) end
-                    local pc = LocalPlayer.Character
-                    local ph = pc and pc:FindFirstChildOfClass("Humanoid")
-                    if ph and ph.MoveDirection.Magnitude > 0 then
-                        move = move + rot:VectorToObjectSpace(ph.MoveDirection)
+                    if not freeCamLockChar then
+                        local pc = LocalPlayer.Character
+                        local ph = pc and pc:FindFirstChildOfClass("Humanoid")
+                        if ph and ph.MoveDirection.Magnitude > 0 then
+                            move = move + rot:VectorToObjectSpace(ph.MoveDirection)
+                        end
+                    else
+                        local pc = LocalPlayer.Character
+                        local ph = pc and pc:FindFirstChildOfClass("Humanoid")
+                        if ph and ph.MoveDirection.Magnitude > 0 then
+                            move = move + rot:VectorToObjectSpace(ph.MoveDirection)
+                        end
                     end
                     if move.Magnitude > 0 then
                         freeCamPos = freeCamPos + rot:VectorToWorldSpace(move.Unit) * freeCamSpeed * dt
                     end
                     cam.CFrame = CFrame.new(freeCamPos) * rot
                 end)
-                Rayfield:Notify({ Title = "Free Camera ON", Content = "PC: WASD + hold right-mouse to look, Space/Shift up-down. Mobile: joystick moves it. Your character stays put.", Duration = 8, Image = "video" })
+                Rayfield:Notify({ Title = "Free Camera ON", Content = "Mobile: drag the right side of the screen to look; joystick moves the camera. PC: WASD + right-mouse to look.", Duration = 8, Image = "video" })
             else
                 if freeCamConn then pcall(function() freeCamConn:Disconnect() end) freeCamConn = nil end
+                if freeCamTouchBegan then pcall(function() freeCamTouchBegan:Disconnect() end) freeCamTouchBegan = nil end
+                if freeCamTouchChanged then pcall(function() freeCamTouchChanged:Disconnect() end) freeCamTouchChanged = nil end
+                if freeCamTouchEnded then pcall(function() freeCamTouchEnded:Disconnect() end) freeCamTouchEnded = nil end
                 cam.CameraType = Enum.CameraType.Custom
                 local char = LocalPlayer.Character
                 local hum = char and char:FindFirstChildOfClass("Humanoid")
